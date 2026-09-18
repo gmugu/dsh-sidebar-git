@@ -1,0 +1,8 @@
+# dsh-sidebar-git bundle patch
+#
+# Mounts the extracted Git panel as one plugin row. The plugin's own route
+# namespace is /git-panel/api (never /sidebar/api), so it can coexist with
+# dsh-better-sidebar without a duplicate-prefix boot failure.
+- insert:
+    - id: sidebar-git
+      name: 'dsh-sidebar-git'

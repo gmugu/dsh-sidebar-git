@@ -1,0 +1,3 @@
+# Keep the extracted sources and build artifacts byte-stable across checkouts:
+# the upstream sources are LF and the built bundle is staged verbatim.
+* text=auto eol=lf

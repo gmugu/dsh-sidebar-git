@@ -1,0 +1,9 @@
+# Dependencies (build-time only: esbuild, clsx)
+node_modules/
+
+# Build churn marker (timestamp written by build/build.js)
+lib/.built
+
+# Local npm cache / logs
+.npm-cache/
+*.log
