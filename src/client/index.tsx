@@ -19,14 +19,14 @@
  * The whole body is additionally guarded: a failure here must never abort the
  * client activation sequence for later packages.
  */
-import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionScope } from './api.ts'
 import { attachLocale, t } from './locales.ts'
 import { GitPanel } from './GitPanel.tsx'
 import { GitDiffPane } from './GitDiffPane.tsx'
 import { fileAddressFor } from './resource-address.ts'
-import type { SidebarDiffRef } from './types.ts'
+import { createGitStore, type GitStoreActions, type GitStoreState, type GitUseStore } from './store.ts'
 
 /** This implementation's identity in the tab system (unique across registrations). */
 const TAB_ID = 'dsh-sidebar-git:git'
@@ -93,21 +93,27 @@ interface GitTabBodyProps {
   sessionId: string
   /** Standard seat hook: the tab record face (the visible flag lives there). */
   useTabInfo: () => { tab: { visible: boolean } }
+  /** Store-bound props: the checkout view, preview ref and pane height live
+   *  outside this component so a tab switch does not discard them. */
+  useStore: GitUseStore
+  actions: GitStoreActions
 }
 
 /**
  * One Git tab body: session scope from the standard sessionId prop + live
  * cwd, the Git panel above, and the shared preview pane below (the changes
- * tab's own composition, minus the session lens).
+ * tab's own composition, minus the session lens). Both the panel's view and
+ * the preview state come from the registration's store, so remounting after
+ * a tab switch is instant and lossless.
  */
 function GitTabBody(props: GitTabBodyProps): ReactNode {
-  const { sessionId, useTabInfo } = props
+  const { sessionId, useTabInfo, useStore, actions } = props
   const info = useTabInfo()
   const visible = info.tab.visible
   const cwd = useSessionCwd(sessionId)
   const scope = useMemo((): SessionScope => ({ sessionId, cwd }), [sessionId, cwd])
-  const [preview, setPreview] = useState<SidebarDiffRef | null>(null)
-  const [paneHeight, setPaneHeight] = useState(300)
+  const preview = useStore((state: GitStoreState) => state.preview)
+  const paneHeight = useStore((state: GitStoreState) => state.paneHeight)
 
   /** Open one file through the native right sidebar's file preview. */
   const openFile = (path: string): void => {
@@ -121,16 +127,18 @@ function GitTabBody(props: GitTabBodyProps): ReactNode {
         scope={scope}
         visible={visible}
         onOpenFile={openFile}
-        onPreview={setPreview}
+        onPreview={(ref) => { actions.setPreview(ref) }}
         selectedRef={preview}
+        useStore={useStore}
+        actions={actions}
       />
       {preview !== null && (
         <GitDiffPane
           target={{ kind: 'git', ref: preview }}
           scope={scope}
           height={paneHeight}
-          onHeightCommit={setPaneHeight}
-          onClose={() => { setPreview(null) }}
+          onHeightCommit={(height) => { actions.setPaneHeight(height) }}
+          onClose={() => { actions.setPreview(null) }}
         />
       )}
     </div>
@@ -175,9 +183,15 @@ export function apply(ctx: ClientContextLike): void {
       return
     }
     ctx.effect(() => tabs.register(gitDefinition()), 'dsh-sidebar-git: git tab type')
+    // The store is declared on the body registration ("exclusive store"), so
+    // the framework mints one instance per session and hands the body
+    // `useStore`/`actions` — panel state then survives the body unmounting
+    // whenever another tab is selected.
+    const store = createGitStore()
     ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab',
       key: TAB_ID,
+      store,
     }, GitTabBody)), 'dsh-sidebar-git: git tab body')
     ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab.title',

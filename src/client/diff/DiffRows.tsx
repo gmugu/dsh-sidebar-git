@@ -293,31 +293,3 @@ export function DiffRows({ segments, lang, resolveFold }: DiffRowsProps) {
   )
 }
 
-export interface ReadRowsProps {
-  /** The file lines with their real line numbers (parseReadLines output). */
-  lines: ReadonlyArray<{ line: number; text: string }>
-  /** Syntax language id (langOfPath); undefined renders plain text. */
-  lang?: string
-}
-
-/** The read view: a line-numbered, syntax-colored slice of a read file. */
-export function ReadRows({ lines, lang }: ReadRowsProps) {
-  const rows = useMemo(() => {
-    let state = false
-    return lines.map((line) => {
-      const scan = scanLine(line.text, lang, state)
-      state = scan.inBlock
-      return { line: line.line, nodes: tokensToNodes(scan.tokens) }
-    })
-  }, [lines, lang])
-  return (
-    <div className={css.rows}>
-      {rows.map((row) => (
-        <div key={String(row.line)} className={css.row} data-kind="read">
-          <span className={css.lineNo}>{String(row.line)}</span>
-          <span className={css.text}>{row.nodes}</span>
-        </div>
-      ))}
-    </div>
-  )
-}

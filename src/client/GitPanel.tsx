@@ -20,12 +20,13 @@ import {
   Button, IconCodeOutline16, IconCopyOutline16, IconPlusOutline16,
   IconRefreshOutline16, IconTrashOutline16, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { GitLogEntry, GitStatusEntry, GitStatusResult, GitWorktree, SessionScope } from './api.ts'
+import type { GitLogEntry, GitStatusEntry, SessionScope } from './api.ts'
 import { api } from './api.ts'
 import { usePolling } from './use-polling.ts'
 import { baseName, isWithinWorkspace, relativeTo } from './paths.ts'
 import { resolveSidebarPath } from './sidebar-path.ts'
 import { relativeTime, t } from './locales.ts'
+import type { GitStoreActions, GitStoreState, GitUseStore } from './store.ts'
 import type { SidebarDiffRef } from './types.ts'
 import css from './changes.module.css'
 
@@ -104,23 +105,22 @@ export interface GitPanelProps {
   selectedRef: SidebarDiffRef | null
   /** Poll only while the tab is actually visible. */
   visible: boolean
+  /** The registration's store selector hook (state that outlives the body). */
+  useStore: GitUseStore
+  /** The registration's bound store actions. */
+  actions: GitStoreActions
 }
 
 export function GitPanel(props: GitPanelProps) {
-  const { scope, onOpenFile, onPreview, selectedRef, visible } = props
-  const [status, setStatus] = useState<GitStatusResult | null>(null)
-  const [worktrees, setWorktrees] = useState<GitWorktree[]>([])
-  const [selectedWorktree, setSelectedWorktree] = useState<string | undefined>()
-  const [repoRoot, setRepoRoot] = useState<string | undefined>(undefined)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [branchNames, setBranchNames] = useState<string[]>([])
-  const [logEntries, setLogEntries] = useState<GitLogEntry[]>([])
-  const [commitMsg, setCommitMsg] = useState('')
+  const { scope, onOpenFile, onPreview, selectedRef, visible, useStore, actions } = props
+  // The checkout-derived view lives in the registration's store, not in this
+  // component: the dock unmounts a tab body when another tab is selected, so
+  // component state would be discarded on every switch.
+  const view = useStore((state: GitStoreState) => state.view)
+  const commitMsg = useStore((state: GitStoreState) => state.commitMsg)
+  const { status, worktrees, selectedWorktree, repoRoot, branchNames, logEntries, logEnded, error } = view
   const [busy, setBusy] = useState(false)
   const [commitError, setCommitError] = useState<string | null>(null)
-  /** Whether the history was fully paged (a batch shorter than LOG_BATCH). */
-  const [logEnded, setLogEnded] = useState(false)
   const [logLoadingMore, setLogLoadingMore] = useState(false)
 
   /** The open file-row context menu (cursor position for the portaled Menu). */
@@ -136,8 +136,8 @@ export function GitPanel(props: GitPanelProps) {
   const worktreeChosenByUser = useRef(false)
   /** selectedWorktree read inside refresh without re-creating the callback:
    *  avoids a spurious full refresh on every auto-select (the very state
-   *  change refresh writes back via setSelectedWorktree would recreate the
-   *  callback and re-trigger the mount effect — an N→N+1 fetch loop). */
+   *  change refresh writes back via the store would recreate the callback and
+   *  re-trigger the mount effect — an N→N+1 fetch loop). */
   const chosenPathRef = useRef<string | undefined>(undefined)
   useEffect(() => { chosenPathRef.current = selectedWorktree }, [selectedWorktree])
   /** Silent polls since the last worktree re-list (see WORKTREE_RECHECK_TICKS). */
@@ -149,10 +149,9 @@ export function GitPanel(props: GitPanelProps) {
    *  history are one consistency unit: never mix rows from two worktrees. */
   const refreshTarget = useCallback(async (
     target: string | undefined,
-    options: { loading: boolean; generation: number },
+    options: { generation: number },
   ): Promise<void> => {
-    if (options.loading) setLoading(true)
-    setError(null)
+    actions.publish({ error: null })
     try {
       const [statusResult, branchResult, logResult] = await Promise.all([
         api.gitStatus(gitScope, target),
@@ -160,17 +159,20 @@ export function GitPanel(props: GitPanelProps) {
         api.gitLog(gitScope, LOG_BATCH, 0, target).catch(() => [] as GitLogEntry[]),
       ])
       if (options.generation !== refreshGeneration.current) return
-      setStatus(statusResult)
-      if (statusResult.root !== undefined && statusResult.root !== repoRoot) setRepoRoot(statusResult.root)
-      setBranchNames(branchResult.names)
-      setLogEntries(logResult)
-      setLogEnded(logResult.length < LOG_BATCH)
+      // One atomic publish: status, branch choices and history are one
+      // consistency unit and must never mix two checkouts.
+      actions.publish({
+        status: statusResult,
+        branchNames: branchResult.names,
+        logEntries: logResult,
+        logEnded: logResult.length < LOG_BATCH,
+        error: null,
+        ...(statusResult.root !== undefined && statusResult.root !== repoRoot ? { repoRoot: statusResult.root } : {}),
+      })
     } catch (reason) {
       if (options.generation === refreshGeneration.current) {
-        setError(errorMessage(reason))
+        actions.publish({ error: errorMessage(reason) })
       }
-    } finally {
-      if (options.loading && options.generation === refreshGeneration.current) setLoading(false)
     }
     // Granular scope fields: the scope object's identity churns, only its
     // sessionId / cwd fields gate the git target.
@@ -187,13 +189,13 @@ export function GitPanel(props: GitPanelProps) {
       // WORKTREE_RECHECK_TICKS) — one git process instead of two.
       if (silent && chosenPathRef.current !== undefined && (silentTickCount.current += 1) % WORKTREE_RECHECK_TICKS !== 0) {
         const statusResult = await api.gitStatus(gitScope, chosenPathRef.current)
-        if (generation === refreshGeneration.current) setStatus(statusResult)
+        if (generation === refreshGeneration.current) actions.publish({ status: statusResult })
         return
       }
       silentTickCount.current = 0
       const listed = await api.gitWorktrees(scope)
       if (generation !== refreshGeneration.current) return
-      setWorktrees(listed)
+      actions.publish({ worktrees: listed })
       const selectedStillExists = listed.some(entry => entry.path === chosenPathRef.current)
       let target = selectedStillExists ? chosenPathRef.current : listed.find(entry => entry.current)?.path
       // DSH and other coding agents commonly create one linked checkout while
@@ -212,28 +214,30 @@ export function GitPanel(props: GitPanelProps) {
         // target refresh that may still be resolving for the previous one.
         generation = refreshGeneration.current += 1
         chosenPathRef.current = target
-        setSelectedWorktree(target)
         // Remove rows owned by the previous checkout immediately: keeping them
         // interactive while the target changes could apply a destructive action
-        // to the new checkout with stale history from the old one.
-        setStatus(null)
-        setBranchNames([])
-        setLogEntries([])
-        setLogEnded(false)
+        // to the new checkout with stale history from the old one. One publish
+        // keeps the panel from ever rendering a mixed view.
+        actions.publish({
+          selectedWorktree: target,
+          status: null,
+          branchNames: [],
+          logEntries: [],
+          logEnded: false,
+        })
         setLogLoadingMore(false)
       }
       // A poll may update status alone only while staying on the same checkout.
       // Any automatic selection change refreshes the complete derived view.
       if (silent && !targetChanged) {
         const statusResult = await api.gitStatus(gitScope, target)
-        if (generation === refreshGeneration.current) setStatus(statusResult)
+        if (generation === refreshGeneration.current) actions.publish({ status: statusResult })
         return
       }
-      await refreshTarget(target, { loading: !silent, generation })
+      await refreshTarget(target, { generation })
     } catch (reason) {
       if (generation === refreshGeneration.current) {
-        setError(errorMessage(reason))
-        if (!silent) setLoading(false)
+        actions.publish({ error: errorMessage(reason) })
       }
     } finally {
       refreshInFlight.current = false
@@ -243,14 +247,22 @@ export function GitPanel(props: GitPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope.sessionId, scope.cwd, refreshTarget])
 
+  // The applied scope lives in the STORE, not in a component ref (a ref dies
+  // with the unmount). A plain remount of the same session therefore keeps its
+  // checkout selection; only a real scope change drops it. Clearing it on every
+  // mount made the following refresh treat the target as changed, blank the
+  // rows and refill them — the visible flicker on returning to this tab.
+  const scopeKey = `${scope.sessionId}\u0000${scope.cwd ?? ''}`
+  const storedScopeKey = useStore((state: GitStoreState) => state.scopeKey)
   useEffect(() => {
+    if (storedScopeKey === scopeKey) return
     refreshGeneration.current += 1
     refreshInFlight.current = false
     worktreeChosenByUser.current = false
     chosenPathRef.current = undefined
     silentTickCount.current = 0
-    setSelectedWorktree(undefined)
-  }, [scope.sessionId, scope.cwd])
+    actions.resetScope(scopeKey)
+  }, [scopeKey, storedScopeKey])
   useEffect(() => { void refresh() }, [refresh])
 
   /** A user choice invalidates any older poll and atomically refreshes every
@@ -258,31 +270,35 @@ export function GitPanel(props: GitPanelProps) {
   const chooseWorktree = (target: string): void => {
     worktreeChosenByUser.current = true
     chosenPathRef.current = target
-    setSelectedWorktree(target)
-    setStatus(null)
-    setBranchNames([])
-    setLogEntries([])
-    setLogEnded(false)
+    actions.publish({
+      selectedWorktree: target,
+      status: null,
+      branchNames: [],
+      logEntries: [],
+      logEnded: false,
+    })
     setLogLoadingMore(false)
     const generation = refreshGeneration.current += 1
-    void refreshTarget(target, { loading: true, generation })
+    void refreshTarget(target, { generation })
   }
   /** Switching the selected child repository must invalidate every
    *  target-derived surface (status/history/log) before the asynchronous
    *  refresh resolves; otherwise stale rows remain actionable while their
    *  handlers already address the new repository. Mirrors chooseWorktree. */
   const chooseRepo = (target: string): void => {
-    setRepoRoot(target)
-    setStatus(null)
-    setBranchNames([])
-    setLogEntries([])
-    setLogEnded(false)
+    actions.publish({
+      repoRoot: target,
+      status: null,
+      branchNames: [],
+      logEntries: [],
+      logEnded: false,
+    })
     setLogLoadingMore(false)
     // Re-list worktrees for the selected child (a workspace container's
     // own worktree list is empty); keep the current linked-checkout choice
     // unless it does not belong to the new repository.
     const generation = refreshGeneration.current += 1
-    void refreshTarget(chosenPathRef.current ?? '', { loading: true, generation })
+    void refreshTarget(chosenPathRef.current ?? '', { generation })
   }
   /** The silent poll tick (the status-only fast path between worktree
    *  re-lists, see refresh) — fixed 2s cadence while visible, no initial
@@ -301,8 +317,10 @@ export function GitPanel(props: GitPanelProps) {
       // A worktree switch clears the old history and increments generation.
       // Never append a late page from that checkout into the new one.
       if (generation !== refreshGeneration.current || target !== chosenPathRef.current) return
-      setLogEntries(entries => [...entries, ...next])
-      if (next.length < LOG_BATCH) setLogEnded(true)
+      actions.publish({
+        logEntries: [...logEntries, ...next],
+        ...(next.length < LOG_BATCH ? { logEnded: true } : {}),
+      })
     } catch (reason) {
       if (generation === refreshGeneration.current && target === chosenPathRef.current) {
         setCommitError(`${t('historyLoadError')}: ${errorMessage(reason)}`)
@@ -368,7 +386,7 @@ export function GitPanel(props: GitPanelProps) {
     setCommitError(null)
     try {
       await api.gitCommit(gitScope, message, selectedWorktree)
-      setCommitMsg('')
+      actions.setCommitMsg('')
       await refresh()
     } catch (reason) {
       setCommitError(errorMessage(reason))
@@ -511,9 +529,14 @@ export function GitPanel(props: GitPanelProps) {
         </button>
       </div>
 
-      {loading && <div className={css.gitPlaceholder}>{t('loading')}</div>}
-      {!loading && error !== null && <div className={css.gitError}>{error}</div>}
-      {!loading && status !== null && !status.isRepo && (
+      {/*
+        No loading placeholder by design: entering this tab must look instant.
+        A warm store (or the module-level copy) already has rows; a cold
+        session paints the header alone until the first snapshot lands, then
+        the sections appear without any "loading" flash.
+      */}
+      {error !== null && <div className={css.gitError}>{error}</div>}
+      {error === null && status !== null && !status.isRepo && (
         <div className={css.gitPlaceholder}>{t('notRepo')}</div>
       )}
 
@@ -553,7 +576,7 @@ export function GitPanel(props: GitPanelProps) {
               placeholder={t('commitPlaceholder')}
               value={commitMsg}
               disabled={busy}
-              onChange={(event) => { setCommitMsg(event.target.value); setCommitError(null) }}
+              onChange={(event) => { actions.setCommitMsg(event.target.value); setCommitError(null) }}
               onKeyDown={(event) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void commit()
               }}

@@ -52,6 +52,19 @@ Installed location: `C:\Users\admin\.dsh\profiles\web\local\dsh-sidebar-git`
 (junctioned from the profile `node_modules`). The workspace copy is the
 source of truth.
 
+## Panel state lives in the registration's store
+
+The dock renders **only the active tab's body** (`renderTab(pane.activeTabId)`
+in the served front end), so selecting another tab unmounts this panel and
+every `useState` inside it is discarded. The body therefore declares a store
+(`store: createGitStore()` in its registration, `defineStore({ init, actions })`
+from `@deepseek-ai/dsh-client-store`), which the framework mints **per
+session** and hands to the component as `useStore`/`actions`. What survives a
+tab switch: the checkout view (status, worktrees, branch names, history), the
+worktree/repo selection, the commit-message draft, the previewed change and
+the preview pane height. A remount renders that snapshot immediately and
+refreshes in the background — no "加载中…" flash, no lost draft.
+
 ## Two traps this plugin already hit (do not regress)
 
 1. **`ctx.inject(...)` does not exist on the client plugin context.** That
@@ -67,8 +80,9 @@ source of truth.
    `@deepseek-ai/dsh-client-ui-primitives` (the branch glyph there is
    `IconBranchOutline16`); the mistake only surfaced in the browser console.
    `build/build.js` now audits every property the bundle reads off the
-   primitives package against that package's own `export { … }` list and
-   fails the build on a missing name.
+   primitives package against that package's own `export { … }` list (and
+   `defineStore`'s presence in the served store bundle) and fails the build on
+   a missing name.
 
 ## Extraction deltas vs upstream (dsh-better-sidebar 0.19.0)
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-git",
-  "version": "0.1.3",
+  "version": "0.2.3",
   "description": "Standalone Git panel tab for the DSH native right sidebar, extracted from dsh-better-sidebar's changes-tab Git lens (MIT, omdsh-dev/DSH-better-sidebar).",
   "type": "module",
   "main": "lib/index.js",
@@ -31,8 +31,7 @@
   },
   "devDependencies": {
     "clsx": "^2.1.1",
-    "esbuild": "^0.28.2",
-    "esbuild-wasm": "^0.28.2"
+    "esbuild": "^0.28.2"
   },
   "peerDependencies": {
     "react": "^18.2.0"

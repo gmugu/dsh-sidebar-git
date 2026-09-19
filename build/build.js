@@ -14,7 +14,8 @@
  *   exact shape the upstream tsdown build emits: a <style> injection plus a
  *   className map (module default export).
  */
-import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync } from 'node:fs'
+import { build } from 'esbuild'
+import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -24,22 +25,6 @@ const lib = join(root, 'lib')
 const PACKAGE_ID = 'dsh-sidebar-git'
 
 mkdirSync(lib, { recursive: true })
-
-// ── esbuild: prefer the native binary; sandboxes that deny child-process
-//    spawn fall back to the in-process WASM build (same API, slower). ─────
-let build
-try {
-  build = (await import('esbuild')).build
-  await build({ stdin: { contents: 'let x: number = 1', resolveDir: root, loader: 'ts' }, write: false })
-} catch (error) {
-  if (error?.code !== 'EPERM') throw error
-  console.log('native esbuild spawn denied (EPERM) — falling back to esbuild-wasm')
-  const esbuildWasm = await import('esbuild-wasm')
-  // In Node the WASM build takes a precompiled WebAssembly.Module.
-  const wasmBinary = readFileSync(join(root, 'node_modules', 'esbuild-wasm', 'esbuild.wasm'))
-  await esbuildWasm.initialize({ wasmModule: new WebAssembly.Module(wasmBinary) })
-  build = esbuildWasm.build
-}
 
 // ── Host half: type-strip the verbatim upstream modules to ESM. ──────────
 await build({
@@ -126,6 +111,7 @@ await build({
     'react-dom',
     'react-dom/client',
     '@deepseek-ai/dsh-client-ui-primitives',
+    '@deepseek-ai/dsh-client-store',
   ],
   plugins: [cssModulePlugin],
   banner: {
@@ -185,31 +171,58 @@ function declaredExports(moduleSource) {
 /**
  * Verify every property the bundle reads off `moduleId` exists in that
  * module's shipped entry. Throws on any missing symbol.
+ *
+ * `mode` — `'exports'` parses the entry's own `export { … }` list (a normal
+ * ESM package entry); `'presence'` only requires each used name to occur in
+ * the entry text, which is all that is checkable for a module that ships
+ * inside the built front-end bundle (no source-level export list).
  */
-function auditExternalSymbols(bundlePath, moduleId, entryCandidates, label) {
+function auditExternalSymbols(bundlePath, moduleId, entryCandidates, label, mode = 'exports') {
   const entry = entryCandidates.find(candidate => existsSync(candidate))
   if (entry === undefined) {
     console.warn(`[audit] ${label}: module entry not found on this machine — audit skipped`)
     return
   }
   const bundle = readFileSync(bundlePath, 'utf8')
-  const declared = declaredExports(readFileSync(entry, 'utf8'))
+  const source = readFileSync(entry, 'utf8')
+  const declared = declaredExports(source)
   const bound = [...bundle.matchAll(new RegExp(`var\\s+(\\w+)\\s*=\\s*require\\("${escapeRegExp(moduleId)}"\\)`, 'g'))]
     .map(match => match[1])
   const accessed = new Set()
   for (const ident of bound) {
     for (const hit of bundle.matchAll(new RegExp(`${ident}\\.([A-Za-z_$][\\w$]*)`, 'g'))) accessed.add(hit[1])
   }
-  const missing = [...accessed].filter(name => !declared.has(name)).sort()
+  const missing = mode === 'presence'
+    ? [...accessed].filter(name => !source.includes(name)).sort()
+    : [...accessed].filter(name => !declared.has(name)).sort()
   if (missing.length > 0) {
     throw new Error(
-      `[audit] ${label}: the bundle reads symbols "${moduleId}" does not export: ${missing.join(', ')}`
+      `[audit] ${label}: the bundle reads symbols "${moduleId}" does not provide: ${missing.join(', ')}`
       + `\n        (checked against ${entry})`,
     )
   }
-  console.log(`[audit] ${label}: ${accessed.size} symbol(s) verified against ${declared.size} declared exports`)
+  const basis = mode === 'presence' ? 'presence in the served bundle' : `${declared.size} declared exports`
+  console.log(`[audit] ${label}: ${accessed.size} symbol(s) verified against ${basis}`)
+}
+
+/** The built front-end bundle's hashed asset files (the client module table's home). */
+function frontendBundleCandidates() {
+  const dirs = [
+    process.env.DSH_FRONTEND_ASSETS,
+    'C:\\nvm4w\\nodejs\\node_modules\\@deepseek-ai\\dsh\\node_modules\\@deepseek-ai\\dsh-web-frontend\\dist\\assets',
+    'C:\\Users\\admin\\AppData\\Local\\nvm\\v24.21.0\\node_modules\\@deepseek-ai\\dsh\\node_modules\\@deepseek-ai\\dsh-web-frontend\\dist\\assets',
+  ].filter(entry => typeof entry === 'string' && entry !== '')
+  const found = []
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue
+    for (const name of readdirSync(dir)) {
+      if (/^index-.*\.js$/.test(name) || name === 'index.js') found.push(join(dir, name))
+    }
+  }
+  return found
 }
 
 auditExternalSymbols(join(lib, 'client.js'), PRIMITIVES_ID, primitivesEntries, 'client → dsh-client-ui-primitives')
+auditExternalSymbols(join(lib, 'client.js'), '@deepseek-ai/dsh-client-store', frontendBundleCandidates(), 'client → dsh-client-store', 'presence')
 
 console.log('build complete → lib/')

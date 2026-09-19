@@ -427,11 +427,6 @@ export function scanLine(line: string, lang: string | undefined, inBlock = false
   return { tokens, inBlock: inComment }
 }
 
-/** Tokenize one line with no incoming block state (standalone lines). */
-export function tokenizeLine(line: string, lang: string | undefined): CodeToken[] {
-  return scanLine(line, lang).tokens
-}
-
 /** True when the language has multi-line block-comment delimiters. */
 export function hasBlockComment(lang: string | undefined): boolean {
   return lang !== undefined && LANGS[lang]?.blockComment !== undefined

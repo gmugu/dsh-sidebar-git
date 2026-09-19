@@ -12,9 +12,10 @@ globalThis.window = {
   },
   document: undefined,
 }
+/** Every defineStore declaration the bundle made (see the stub below). */
+const storeSpecs = []
 const requireStubs = {
-  react: {
-    useState: () => [null, () => {}],
+  react: {    useState: () => [null, () => {}],
     useMemo: (f) => f(),
     useSyncExternalStore: () => undefined,
     useCallback: (f) => f,
@@ -32,6 +33,14 @@ const requireStubs = {
     writeClipboard: () => {},
   },
   clsx: (...args) => args.filter(Boolean).join(' '),
+  // The framework store: capture the declaration so the assertions below can
+  // inspect init/actions and the registration's `store` option.
+  '@deepseek-ai/dsh-client-store': {
+    defineStore: (spec) => {
+      storeSpecs.push(spec)
+      return { __storeHandle: true }
+    },
+  },
 }
 await import('../lib/client.js')
 if (loaded.length !== 1) throw new Error(`expected exactly one load() call, got ${loaded.length}`)
@@ -92,6 +101,33 @@ const bodyReg = registered.panes[0]
 if (bodyReg.options.inject !== undefined) throw new Error('custom inject face must stay off the shared seat')
 console.log('body key:', bodyReg.options.key, '| no custom inject ✓')
 console.log('body component:', typeof bodyReg.component)
+
+// ── The store declaration (state that must outlive the tab body) ──────────
+if (bodyReg.options.store === undefined) throw new Error('the body registration must declare a store')
+if (storeSpecs.length !== 1) throw new Error(`expected exactly one defineStore declaration, got ${storeSpecs.length}`)
+const spec = storeSpecs[0]
+if (typeof spec.init !== 'function') throw new Error('store spec needs init()')
+for (const action of ['publish', 'setCommitMsg', 'setPreview', 'setPaneHeight', 'resetScope']) {
+  if (typeof spec.actions?.[action] !== 'function') throw new Error(`store spec is missing action "${action}"`)
+}
+const draft = spec.init()
+if (draft.view?.status !== null || draft.commitMsg !== '' || draft.preview !== null || draft.paneHeight !== 300) {
+  throw new Error('store init() must start with an empty view, no draft, no preview, 300px pane')
+}
+if (draft.scopeKey !== '') throw new Error('store init() must start with an unapplied scope')
+spec.actions.publish(draft, { status: { isRepo: true, entries: [] }, error: null })
+spec.actions.setCommitMsg(draft, 'wip')
+spec.actions.setPaneHeight(draft, 420)
+if (draft.view.status?.isRepo !== true) throw new Error('publish must patch the view')
+if (draft.commitMsg !== 'wip') throw new Error('setCommitMsg must replace the draft')
+if (draft.paneHeight !== 420) throw new Error('setPaneHeight must commit the height')
+spec.actions.setPreview(draft, { kind: 'commit', hash: 'abc', hashFull: 'a'.repeat(40), subject: 's' })
+if (draft.preview?.kind !== 'commit') throw new Error('setPreview must store the ref')
+// `resetScope` marks a genuinely changed scope and drops the old selection.
+spec.actions.resetScope(draft, 's1\u0000D:/y')
+if (draft.scopeKey !== 's1\u0000D:/y') throw new Error('resetScope must record the new scope')
+if (draft.view.selectedWorktree !== undefined) throw new Error('resetScope must drop the checkout selection')
+console.log('store spec: init + 5 actions verified ✓')
 if (registered.titles.length !== 1) throw new Error('title slot not registered')
 console.log('APPLY MOCK OK')
 
