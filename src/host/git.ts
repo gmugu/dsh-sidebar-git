@@ -446,9 +446,28 @@ export async function commitDiff(cwd: string, hash: string, selected?: string): 
   return runGit(await repoRoot(cwd, selected), ['show', '--no-ext-diff', '--no-color', '--format=', '-m', '--first-parent', hash])
 }
 
-/** Discard the worktree changes of one path (`git checkout -- <path>`; the index is untouched). */
+/** Whether the index records this path — a staged new file counts, an untracked
+ *  one does not. `ls-files` prints nothing and exits 0 for a path it does not
+ *  know, so this never leans on git's error text (which is locale dependent). */
+async function indexed(cwd: string, path: string): Promise<boolean> {
+  return (await runGit(cwd, ['ls-files', '-z', '--', path])).length > 0
+}
+
+/**
+ * Discard the worktree changes of one path, leaving the index untouched. A path
+ * the index records is restored from it (`git checkout -- <path>`), so a staged
+ * change survives its worktree being reset. An untracked path has no earlier
+ * version to restore, so discarding its change means deleting it
+ * (`git clean -f -d -- <path>`: untracked files and directories only, never an
+ * ignored one) — the editor convention for a new file.
+ */
 export async function discard(cwd: string, path: string, selected?: string): Promise<void> {
-  await runGit(await repoRoot(cwd, selected), ['checkout', '--', path])
+  const root = await repoRoot(cwd, selected)
+  if (await indexed(root, path)) {
+    await runGit(root, ['checkout', '--', path])
+    return
+  }
+  await runGit(root, ['clean', '-f', '-d', '--', path])
 }
 
 /** Revert one commit onto the current branch with an auto-generated message. */

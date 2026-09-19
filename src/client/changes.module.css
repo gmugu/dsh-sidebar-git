@@ -380,6 +380,9 @@
   flex: none;
 }
 .iconButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+/* A destructive row action (discard / delete) tints red on hover: the icon
+   alone is quiet, the intent is not. */
+.iconButton[data-danger='true']:hover:not(:disabled) { color: var(--dsw-alias-state-error-primary); }
 .iconButton:disabled { opacity: 0.4; cursor: default; }
 
 .paneBody { flex: 1; min-height: 0; overflow-y: auto; }

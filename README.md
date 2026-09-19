@@ -10,11 +10,13 @@ provenance notes; only the route prefix, glue, and locale subset are new).
 - One native right-sidebar page tab (kind `git`, extension band) with a guide
   capsule, reachable from the panel's "+" add control.
 - The full Git lens feature set: staged/unstaged file lists, stage/unstage,
+  row-level discard on every unstaged row (a tracked path resets to the index,
+  an untracked one is deleted — both behind the confirm modal),
   commit box, branch switch, worktree + child-repo selectors, VSCode-like
   history (lazy paging, ref decorations), shared bottom diff pane
   (staged-side fallback, untracked full-addition fallback, hunk-fold
-  expansion), right-click menus (open file, discard/revert/cherry-pick with
-  confirm modals, copy paths/hashes), 2s polling while visible.
+  expansion), right-click menus (open file, discard/delete/revert/cherry-pick
+  with confirm modals, copy paths/hashes), 2s polling while visible.
 - Host routes under **`/git-panel/api/`** (own prefix; coexists with
   dsh-better-sidebar's `/sidebar/api`): `git.status/diff/stage/unstage/commit/
   branch/checkout/log/commit-diff/show/worktrees/discard/revert/cherry-pick`

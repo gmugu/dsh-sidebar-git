@@ -71,6 +71,33 @@ function refNames(refs: string): string[] {
   )]
 }
 
+/**
+ * The discard glyph: an arrow curving back to the left (the row-level "undo
+ * this change"). The primitives package ships no undo/rollback icon, and an
+ * import it does not export is `undefined` — rendering that crashes React, so
+ * the panel draws this one inline in the inherited text color. The staged
+ * row's unstage action keeps the trash icon (a different meaning, and a
+ * different icon, is what keeps the two inline actions apart).
+ */
+function DiscardGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5.6 3.2 2.2 6.6l3.4 3.4" />
+      <path d="M2.2 6.6h6.6a4.2 4.2 0 0 1 0 8.4H6.6" />
+    </svg>
+  )
+}
+
 /** One thrown value as display text (every error banner/row here normalizes
  *  through this so non-Error rejections never render as '[object Object]'). */
 function errorMessage(reason: unknown): string {
@@ -379,6 +406,22 @@ export function GitPanel(props: GitPanelProps) {
     }
   }
 
+  /** Discard one row's worktree change, behind the shared confirm modal (the
+   *  one destructive action a single click reaches). A tracked path is reset
+   *  from the index; an untracked one has no earlier version, so the modal
+   *  says "delete" instead of "discard" before the host removes the file. */
+  const discardEntry = (entry: GitStatusEntry): void => {
+    const untracked = isUntracked(entry)
+    runConfirmed({
+      title: untracked ? t('discardUntrackedTitle') : t('discardTitle'),
+      description: untracked
+        ? t('discardUntrackedDesc', { path: entry.path })
+        : t('discardDesc', { path: entry.path }),
+      confirmLabel: untracked ? t('deleteFile') : t('discard'),
+      onConfirm: () => api.gitDiscard(gitScope, entry.path, selectedWorktree),
+    })
+  }
+
   const commit = async (): Promise<void> => {
     const message = commitMsg.trim()
     if (message === '' || busy) return
@@ -463,6 +506,22 @@ export function GitPanel(props: GitPanelProps) {
           <span className={css.gitBadge} data-letter={badgeOf(entry)}>{badgeOf(entry)}</span>
           <span className={css.gitName}>{entry.path}</span>
         </button>
+        {/* The unstaged row carries the row-level discard (reset a tracked
+            path to the index, delete an untracked one) left of stage, so a
+            single file can be reverted without opening the context menu. */}
+        {!staged && (
+          <button
+            type="button"
+            className={css.iconButton}
+            data-danger="true"
+            aria-label={isUntracked(entry) ? t('deleteFile') : t('discard')}
+            title={isUntracked(entry) ? t('deleteFile') : t('discard')}
+            disabled={busy}
+            onClick={() => { discardEntry(entry) }}
+          >
+            <DiscardGlyph />
+          </button>
+        )}
         <button
           type="button"
           className={css.iconButton}
@@ -653,8 +712,13 @@ export function GitPanel(props: GitPanelProps) {
               fileMenu?.staged === true
                 ? { id: 'stage', label: t('unstage'), icon: <IconTrashOutline16 size={14} /> }
                 : { id: 'stage', label: t('stage'), icon: <IconPlusOutline16 size={14} /> },
-              ...(fileMenu !== null && !isUntracked(fileMenu.entry)
-                ? [{ id: 'discard', label: t('discard'), icon: <IconTrashOutline16 size={14} />, danger: true }]
+              ...(fileMenu !== null
+                ? [{
+                  id: 'discard',
+                  label: isUntracked(fileMenu.entry) ? t('deleteFile') : t('discard'),
+                  icon: <IconTrashOutline16 size={14} />,
+                  danger: true,
+                }]
                 : []),
               { type: 'separator', id: 'sep1' },
               { id: 'relative', label: t('copyRelative'), icon: <IconCopyOutline16 size={14} /> },
@@ -679,12 +743,7 @@ export function GitPanel(props: GitPanelProps) {
                 return
               }
               if (id === 'discard') {
-                runConfirmed({
-                  title: t('discardTitle'),
-                  description: t('discardDesc', { path: target.entry.path }),
-                  confirmLabel: t('discard'),
-                  onConfirm: () => api.gitDiscard(gitScope, target.entry.path, selectedWorktree),
-                })
+                discardEntry(target.entry)
                 return
               }
               if (id === 'relative') {
