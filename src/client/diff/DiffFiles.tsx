@@ -1,11 +1,12 @@
 /**
  * A full unified-diff document (one changed file, or every file of a commit
- * patch): collapsible per-file headers — source files open by default, tests
- * / docs / generated files stay folded — each expanded file rendering through
- * the shared {@link DiffRows} (so git diffs get the same rewrite tinting,
- * intra-line highlights, syntax colors and hunk folds as session-op diffs).
- * Untracked files produce no `git diff` output; the caller passes their
- * content to render as a full-file addition instead.
+ * patch): collapsible per-file headers — a single-file document opens its
+ * file, a multi-file one opens source files and folds tests / docs /
+ * generated files — each expanded file rendering through the shared
+ * {@link DiffRows} (so git diffs get the same rewrite tinting, intra-line
+ * highlights, syntax colors and hunk folds as session-op diffs). Untracked
+ * files produce no `git diff` output; the caller passes their content to
+ * render as a full-file addition instead.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
@@ -20,12 +21,28 @@ const DOC_PATH = /(^|\/)(?:docs?|documentation)(?:\/|$)|(^|\/)(?:readme|changelo
 const GENERATED_PATH = /(^|\/)(?:dist|build|coverage|generated|vendor|node_modules)(?:\/|$)|(^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|composer\.lock|cargo\.lock|poetry\.lock)$/i
 const SOURCE_PATH = /\.(?:js|jsx|mjs|cjs|ts|tsx|mts|cts|py|pyw|rb|php|java|kt|kts|scala|go|rs|swift|c|h|cc|cpp|cxx|hpp|hh|hxx|cs|fs|fsx|vb|dart|lua|r|ex|exs|erl|hrl|clj|cljs|cljc|groovy|sh|bash|zsh|fish|ps1|sql|vue|svelte|astro|html|htm|css|scss|sass|less)$/i
 
-/** Source files open by default; tests, docs, generated files and unknown types stay folded. */
+/** Whether a file block has rows to reveal (a binary file, or one git emitted
+ *  no hunks for, has nothing to expand into). */
+function expandable(file: DiffFile): boolean {
+  return !file.binary && file.hunks.length > 0
+}
+
+/**
+ * The file blocks a diff document opens with. A single-file document is the
+ * worktree/commit diff of one path — the bottom pane's normal case, where the
+ * caller already clicked that change to see it — so it opens, and a lone
+ * folded block would only add a click. Multi-file documents (commit patches)
+ * keep the type heuristic so one commit does not unfold everything at once:
+ * source files open by default, tests, docs, generated files and unknown
+ * types stay folded.
+ */
 function defaultExpandedFiles(files: readonly DiffFile[]): Set<number> {
+  const only = files.length === 1 ? files[0] : undefined
+  if (only !== undefined) return expandable(only) ? new Set([0]) : new Set()
   const expanded = new Set<number>()
   files.forEach((file, index) => {
     const path = displayPath(file.newPath === '/dev/null' ? file.oldPath : file.newPath)
-    if (!file.binary && file.hunks.length > 0
+    if (expandable(file)
       && !TEST_PATH.test(path) && !DOC_PATH.test(path) && !GENERATED_PATH.test(path)
       && SOURCE_PATH.test(path)) {
       expanded.add(index)
@@ -102,15 +119,15 @@ export function DiffFiles({ diff, untrackedPath, untrackedContent, resolveFold }
     const tag = fileTag(file)
     const from = displayPath(file.oldPath)
     const to = displayPath(file.newPath)
-    const expandable = !file.binary && file.hunks.length > 0
+    const canExpand = expandable(file)
     const fileExpanded = expandedFiles.has(fileIndex)
     return (
       <div key={`file-${String(fileIndex)}`} className={css.fileBlock}>
         <button
           type="button"
           className={css.file}
-          disabled={!expandable}
-          aria-expanded={expandable ? fileExpanded : undefined}
+          disabled={!canExpand}
+          aria-expanded={canExpand ? fileExpanded : undefined}
           onClick={() => {
             setExpandedFiles(current => {
               const next = new Set(current)
@@ -120,18 +137,18 @@ export function DiffFiles({ diff, untrackedPath, untrackedContent, resolveFold }
             })
           }}
         >
-          {expandable && <span aria-hidden="true" className={clsx(css.fileChevron, fileExpanded && css.fileChevronExpanded)}>›</span>}
+          {canExpand && <span aria-hidden="true" className={clsx(css.fileChevron, fileExpanded && css.fileChevronExpanded)}>›</span>}
           <span className={css.filePath}>{to}</span>
           {from !== to && <span className={css.fileOld}>← {from}</span>}
           {tag !== null && <span className={css.fileTag}>{tag}</span>}
-          {expandable && (stats.added > 0 || stats.deleted > 0) && (
+          {canExpand && (stats.added > 0 || stats.deleted > 0) && (
             <span className={css.fileStats}>
               {stats.added > 0 && <span className={css.statAdd}>+{String(stats.added)}</span>}
               {stats.deleted > 0 && <span className={css.statDel}>−{String(stats.deleted)}</span>}
             </span>
           )}
         </button>
-        {expandable && fileExpanded && (
+        {canExpand && fileExpanded && (
           <DiffRows segments={segments} lang={langOfPath(to)} resolveFold={resolveFold !== undefined ? (segment) => loadFold(file, segment) : undefined} />
         )}
       </div>
