@@ -1,5 +1,7 @@
 # dsh-sidebar-git
 
+[English](README.md) · [简体中文](README.zh.md)
+
 Standalone Git panel tab for the DSH native right sidebar — extracted from
 [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)'s
 changes-tab Git lens (MIT, upstream sources included under `src/` with
@@ -8,27 +10,40 @@ provenance notes; only the route prefix, glue, and locale subset are new).
 ## What it provides
 
 - One native right-sidebar page tab (kind `git`, extension band) with a guide
-  capsule, reachable from the panel's "+" add control.
-- The full Git lens feature set: staged/unstaged file lists, stage/unstage,
-  row-level discard on every unstaged row (a tracked path resets to the index,
-  an untracked one is deleted — both behind the confirm modal),
-  commit box, branch switch, worktree + child-repo selectors, VSCode-like
-  history (lazy paging, ref decorations), shared bottom diff pane
-  (staged-side fallback, untracked full-addition fallback, hunk-fold
-  expansion), right-click menus (open file, discard/delete/revert/cherry-pick
-  with confirm modals, copy paths/hashes), 2s polling while visible.
+  capsule (its `order` is 15, between the workspace-files and new-terminal
+  capsules — a tie there would fall back to plugin activation order and let the
+  capsule drift between rows), reachable from the panel's "+" add control.
+- The Git lens feature set: staged/unstaged file lists with a bulk action per
+  section (stage all / unstage all, plus **discard all** on the unstaged side,
+  which the confirm modal itemises as tracked resets and untracked deletions),
+  three inline row actions — discard (a tracked path resets to the index, an
+  untracked one is deleted, both behind the confirm modal), stage (`+`) and
+  unstage (`−`) — a commit box, branch switch, worktree + child-repo selectors,
+  and VSCode-like history (lazy paging, ref decorations; the commit-history rows
+  keep a right-click menu for view/diff/copy/revert/cherry-pick).
+- The shared bottom diff pane: half the panel until it is dragged (the store
+  keeps `paneHeight: null` until a real resize), staged-side fallback, untracked
+  full-addition fallback, hunk-fold expansion, and a one-line notice when a
+  document cannot be shown whole (a read capped at 2 MiB, or a binary file).
+  A commit patch opens fully folded (its headers still carry each file's path,
+  badge and ±counts); a worktree preview — always the single change that was
+  clicked — opens.
+- **No network, ever**: the panel runs `git` locally and reads files; it never
+  fetches, pulls or pushes, and it has no remote UI. Nothing it does can touch
+  a remote.
 - Host routes under **`/git-panel/api/`** (own prefix; coexists with
   dsh-better-sidebar's `/sidebar/api`): `git.status/diff/stage/unstage/commit/
   branch/checkout/log/commit-diff/show/worktrees/discard/revert/cherry-pick`
-  + `fs.read` (untracked fallback). Every command runs with `-C` on the
+  + `fs.read` (untracked fallback; text and binary reads both report the real
+  `size` and a `truncated` flag). Every command runs with `-C` on the
   session's working directory; optional worktree/repo targets are validated
   against the authoritative registry. Requests pass the same loopback/Origin
   trust fence as the `/api` gateway.
 
 ## Layout
 
-The repository root (`D:\ws\dsh-sidebar-git`) **is** the package root — these
-entries sit directly beside each other:
+The repository root **is** the package root — these entries sit directly beside
+each other:
 
 - `src/host/` — `git.ts` / `trust-fence.ts` / `wire.ts` / `session-path.ts`
   (verbatim upstream, type-stripped at build) + `index.js` (new glue).
@@ -44,15 +59,20 @@ entries sit directly beside each other:
 
 ```
 node build/build.js                                # rebuild lib/ (runs the export audit)
-node build/dry-run.mjs                             # exported face + registrations + guard-facade pass
-# stage the built package into the profile (pnpm cannot junction across drives):
-Copy-Item package.json,cordis.patch.yml,lib -> C:\Users\admin\.dsh\profiles\web\local\dsh-sidebar-git\
-# then reinstall via the plugin manager (bundle: dsh-sidebar-git)
+node build/dry-run.mjs                             # exported face + registrations + guard-facade + route/locale parity
+node build/probe/run.mjs                           # host discard + fs.read routes + diff-document model
+# stage the built package into the DSH profile (pnpm cannot junction across drives):
+powershell -File build/stage.ps1
 ```
 
-Installed location: `C:\Users\admin\.dsh\profiles\web\local\dsh-sidebar-git`
-(junctioned from the profile `node_modules`). The workspace copy is the
-source of truth.
+Deployment is a **staging copy**, not a reinstall: the profile resolves this
+package through a junction to `<dsh home>/profiles/<profile>/local/<package>`
+(on Windows `build/stage.ps1` holds those two paths and copies `package.json` /
+`cordis.patch.yml` / `lib/` / the READMEs there). The workspace copy is the
+source of truth, so a **client** change needs a page refresh and a **host**
+change (`src/host/`) needs a dsh restart. `plugin_manager install_bundle`
+reports `ambiguous-install` once the dependency is a `link:` to that same
+directory (pnpm sees no dependency change) — staging is the working path.
 
 ## Panel state lives in the registration's store
 
@@ -89,12 +109,18 @@ refreshes in the background — no "加载中…" flash, no lost draft.
 ## Extraction deltas vs upstream (dsh-better-sidebar 0.19.0)
 
 - No sidebar store/preferences: the workspace fence is treated as always
-  armed (the "open file" menu item only offers in-workspace paths).
+  armed.
 - No session lens, no diff tab expansion, no markdown/html/pdf preview
   machinery (git diff views only).
 - Session cwd resolution: session header → client summary cwd → process cwd
   (the session-persistence fallback is not carried over).
-- "Open file" hands the path to the native right sidebar's built-in file
-  preview (`dsh-resource://file/...`) instead of the plugin editor.
+- **The file rows have no right-click menu** (upstream's offered open-editor,
+  copy-path, stage and discard there): the actions a row needs are its three
+  inline buttons, and opening a file was dropped with the menu — the native
+  sidebar's file tab covers browsing. The commit-history rows keep theirs.
+- Fixed beyond upstream: the untracked preview (upstream's pane gates the
+  document on non-empty diff text and renders nothing for a new file) and the
+  untracked discard (upstream's `discard` runs `git checkout --` only, which
+  cannot touch a path the index does not know).
 - Route prefix `/git-panel/api`; locale reduced to the zh/en keys this panel
   uses.
