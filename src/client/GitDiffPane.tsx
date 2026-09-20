@@ -42,7 +42,10 @@ export interface GitDiffPaneProps {
 
 export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: GitDiffPaneProps) {
   // ── Git target loading (mirrors the upstream diff tab: staged-side
-  //    fallback, the untracked full-addition fallback, refresh by tick). ──
+  //    fallback, the untracked full-addition fallback, refresh by tick).
+  //    Every visited target is fetched fresh: for an untracked file that is one
+  //    request and no git process, for a tracked one a single `git diff` — the
+  //    price of an always-current document with no state to invalidate. ─────
   const [tick, setTick] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -75,6 +78,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
     setDiffText(null)
     setUntracked(undefined)
     setEffectiveStaged(null)
+
     const load = async (): Promise<void> => {
       try {
         if (gitRef.kind === 'commit') {
@@ -82,31 +86,37 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
           if (!cancelled) setDiffText(result.diff)
           return
         }
+        // A path git does not track has no patch and no earlier revision: both
+        // sides of `git diff` are empty by definition, so asking for them costs
+        // two git processes and two round trips to learn nothing. The row's own
+        // status already says "untracked" — read the file and render the full
+        // addition git would emit for a new file. (Were that flag one poll
+        // stale, the drawing still matches what git reports for that path.)
+        if (gitRef.untracked === true && !gitRef.staged) {
+          const text = await api.fsRead(paneScope, resolveSidebarPath(gitRef.repoRoot ?? gitRef.worktree ?? scope.cwd, gitRef.path))
+          if (!cancelled) {
+            setDiffText('')
+            // A binary file has no text to draw: the empty document shows the
+            // pane's "no text changes" note instead of a blank body.
+            if (text.kind === 'text') setUntracked(text.content)
+          }
+          return
+        }
         let result = await api.gitDiff(paneScope, gitRef.path, gitRef.staged, gitRef.worktree)
+        let staged: boolean | null = null
         if (result.diff === '') {
           // The requested side is empty — try the OTHER side once (the change
           // may have moved sides after the preview target was minted).
           const other = await api.gitDiff(paneScope, gitRef.path, !gitRef.staged, gitRef.worktree)
           if (other.diff !== '') {
             result = other
-            if (!cancelled) setEffectiveStaged(!gitRef.staged)
+            staged = !gitRef.staged
           }
         }
-        if (result.diff !== '') {
-          if (!cancelled) setDiffText(result.diff)
-          return
+        if (!cancelled) {
+          setDiffText(result.diff)
+          setEffectiveStaged(staged)
         }
-        // Empty diff: an untracked file (git diff never lists it) falls back
-        // to a full-file addition from its content.
-        if (gitRef.untracked === true && !gitRef.staged) {
-          const text = await api.fsRead(paneScope, resolveSidebarPath(gitRef.repoRoot ?? gitRef.worktree ?? scope.cwd, gitRef.path))
-          if (!cancelled && text.kind === 'text') {
-            setDiffText('')
-            setUntracked(text.content)
-          }
-          return
-        }
-        if (!cancelled) setDiffText('')
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason))
       } finally {
@@ -284,9 +294,17 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
           ? <div className={css.paneBody}><div className={css.gitError}>{t('diffLoadError')}: {error}</div></div>
           : (
             <div className={css.paneBody}>
-              {diffText !== null && diffText !== '' && (
+              {/* An untracked target carries no diff text at all — git never
+                  emits one — and renders from its content instead, so the
+                  document gate must accept that pair. Gating on non-empty diff
+                  text alone (upstream's pane does exactly that) silently drops
+                  the full-addition fallback the loader just filled in, leaving
+                  a new file's preview blank with no error. The upstream diff
+                  TAB gates on the untracked flag this way; the pane now does
+                  the same. */}
+              {((diffText !== null && diffText !== '') || untracked !== undefined) && (
                 <DiffFiles
-                  diff={diffText}
+                  diff={diffText ?? ''}
                   resolveFold={foldLoader}
                   untrackedPath={untracked !== undefined && gitRef.kind === 'worktree' ? gitRef.path : undefined}
                   untrackedContent={untracked}
