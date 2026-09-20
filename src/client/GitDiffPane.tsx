@@ -311,6 +311,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
                 <DiffFiles
                   diff={diffText ?? ''}
                   resolveFold={foldLoader}
+                  startFolded={gitRef.kind === 'commit'}
                   untrackedPath={untracked !== undefined && gitRef.kind === 'worktree' ? gitRef.path : undefined}
                   untrackedContent={untracked}
                 />
