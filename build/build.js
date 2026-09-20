@@ -16,13 +16,22 @@
  */
 import { build } from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, readdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const src = join(root, 'src')
 const lib = join(root, 'lib')
 const PACKAGE_ID = 'dsh-sidebar-git'
+
+/** A repo-relative, '/'-separated path — the only path form the bundle may
+ *  embed (an absolute one would publish the builder's directory layout and make
+ *  the artifact differ from machine to machine). */
+function portablePath(absolute) {
+  return relative(root, absolute).replace(/\\/g, '/')
+}
 
 mkdirSync(lib, { recursive: true })
 
@@ -49,12 +58,14 @@ const cssModulePlugin = {
   name: 'css-module',
   setup(build2) {
     build2.onResolve({ filter: /\.module\.css$/ }, (args) => ({
-      path: join(args.resolveDir, args.path),
+      path: portablePath(join(args.resolveDir, args.path)),
       namespace: 'css-module',
     }))
     build2.onLoad({ filter: /.*/, namespace: 'css-module' }, (args) => {
-      const source = readFileSync(args.path, 'utf8')
-      const tagId = `${PACKAGE_ID}/${args.path.split(/[\\/]/).pop()}`
+      const source = readFileSync(join(root, args.path), 'utf8')
+      // Keyed by the relative path, so two stylesheets that share a basename
+      // stay distinct style tags.
+      const tagId = `${PACKAGE_ID}/${args.path}`
       // Strip comments first so prose like "see sidebar.module.css" never
       // gets its `.word` tokens rewritten, then restore them verbatim.
       const comments = []
@@ -144,11 +155,61 @@ writeFileSync(join(lib, '.built'), new Date().toISOString())
 // bundle reads off an external module must appear in that module's own
 // `export { … }` list.
 const PRIMITIVES_ID = '@deepseek-ai/dsh-client-ui-primitives'
+
+/**
+ * Node-module roots that can hold a DSH installation, derived from where THIS
+ * process runs rather than written down: nvm-windows keeps node inside its own
+ * version directory (so the global modules sit beside the executable), POSIX
+ * system installs use lib/node_modules, a workspace may vendor the package, and
+ * the DSH home supplies the profile trees. An installation that cannot be found
+ * makes the audit skip with a hint (see below) instead of failing a build on a
+ * machine that simply does not have DSH installed.
+ */
+function dshModuleRoots() {
+  const roots = []
+  const push = (candidate) => {
+    if (typeof candidate === 'string' && candidate !== '' && !roots.includes(candidate)) roots.push(candidate)
+  }
+  const execDir = dirname(process.execPath)
+  push(join(execDir, 'node_modules'))
+  push(join(execDir, 'lib', 'node_modules'))
+  push(join(root, 'node_modules'))
+  const dshHome = process.env.DSH_HOME ?? join(process.env.USERPROFILE ?? homedir(), '.dsh')
+  push(join(dshHome, 'profiles', 'node_modules'))
+  try {
+    for (const entry of readdirSync(join(dshHome, 'profiles'), { withFileTypes: true })) {
+      if (entry.isDirectory()) push(join(dshHome, 'profiles', entry.name, 'node_modules'))
+    }
+  } catch {
+    // No profile tree here; the other roots still apply.
+  }
+  return roots
+}
+
+/** One package-relative entry under every root, in both nestings DSH uses
+ *  (`…/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/<pkg>` and the
+ *  flat `…/@deepseek-ai/<pkg>`). */
+function dshPackageEntries(relativePath) {
+  const nestings = [
+    join('@deepseek-ai', 'dsh', 'node_modules', '@deepseek-ai', relativePath),
+    join('@deepseek-ai', relativePath),
+  ]
+  return dshModuleRoots().flatMap(base => nestings.map(nesting => join(base, nesting)))
+}
+
+/** The entry of a package resolved through this workspace's own module graph. */
+function resolvedEntry(specifier) {
+  try {
+    return createRequire(import.meta.url).resolve(specifier)
+  } catch {
+    return undefined
+  }
+}
+
 const primitivesEntries = [
   process.env.DSH_PRIMITIVES_ENTRY,
-  join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-primitives', 'lib', 'index.js'),
-  'C:\\nvm4w\\nodejs\\node_modules\\@deepseek-ai\\dsh\\node_modules\\@deepseek-ai\\dsh-client-ui-primitives\\lib\\index.js',
-  join(process.env.USERPROFILE ?? '', '.dsh', 'profiles', 'node_modules', '@deepseek-ai', 'dsh-client-ui-primitives', 'lib', 'index.js'),
+  resolvedEntry(PRIMITIVES_ID),
+  ...dshPackageEntries(join('dsh-client-ui-primitives', 'lib', 'index.js')),
 ].filter(entry => typeof entry === 'string' && entry !== '')
 
 /** Escape one literal for use inside a RegExp. */
@@ -180,7 +241,8 @@ function declaredExports(moduleSource) {
 function auditExternalSymbols(bundlePath, moduleId, entryCandidates, label, mode = 'exports') {
   const entry = entryCandidates.find(candidate => existsSync(candidate))
   if (entry === undefined) {
-    console.warn(`[audit] ${label}: module entry not found on this machine — audit skipped`)
+    console.warn(`[audit] ${label}: ${moduleId} not found on this machine — audit skipped`
+      + '\n        (set DSH_PRIMITIVES_ENTRY / DSH_FRONTEND_ASSETS to point at a DSH installation)')
     return
   }
   const bundle = readFileSync(bundlePath, 'utf8')
@@ -209,8 +271,7 @@ function auditExternalSymbols(bundlePath, moduleId, entryCandidates, label, mode
 function frontendBundleCandidates() {
   const dirs = [
     process.env.DSH_FRONTEND_ASSETS,
-    'C:\\nvm4w\\nodejs\\node_modules\\@deepseek-ai\\dsh\\node_modules\\@deepseek-ai\\dsh-web-frontend\\dist\\assets',
-    'C:\\Users\\admin\\AppData\\Local\\nvm\\v24.21.0\\node_modules\\@deepseek-ai\\dsh\\node_modules\\@deepseek-ai\\dsh-web-frontend\\dist\\assets',
+    ...dshPackageEntries(join('dsh-web-frontend', 'dist', 'assets')),
   ].filter(entry => typeof entry === 'string' && entry !== '')
   const found = []
   for (const dir of dirs) {

@@ -196,3 +196,52 @@ if (zhOnly.length > 0 || enOnly.length > 0) {
   throw new Error(`locale key mismatch — zh only: ${zhOnly.join(', ') || 'none'}; en only: ${enOnly.join(', ') || 'none'}`)
 }
 console.log(`locale parity ✓ — ${zhKeys.length} key(s)`)
+
+// ── Portability pass: nothing this repository ships may carry the builder's
+//    machine. An artifact, a doc or a script that embeds an absolute path (a
+//    drive letter, a user profile, AppData) leaks the author's directory layout
+//    and makes the build differ from machine to machine - the CSS-module
+//    virtual id and the build script's DSH lookup both shipped that way once. A
+//    line that genuinely has to show such a path can opt out with the marker
+//    `machine-path-ok`.
+const { readdirSync } = await import('node:fs')
+const { join, relative } = await import('node:path')
+const rootDir = fileURLToPath(new URL('..', import.meta.url))
+const MACHINE_PATTERNS = [
+  // A drive path with at least two non-empty segments: that is a real location
+  // (`D:\ws\project\src`, `C:\Users\me\AppData\...`, `C:\nvm4w\nodejs\node_modules`),
+  // while a doc example like `C:\\foo` or a placeholder like `D:\dsh-home` has
+  // one segment and stays legal.
+  ['windows drive path', /[A-Za-z]:\\[^\\\s]+\\[^\\\s]/],
+  ['user profile path', /[\\/]Users[\\/]/],
+  ['AppData', /AppData/],
+  ['env placeholder', /%USERPROFILE%/],
+]
+/** Every file this repository publishes, plus the build tooling — except this
+ *  gate itself, whose pattern literals would otherwise flag it. */
+const shippedFiles = [
+  ...readdirSync(join(rootDir, 'lib')).filter((name) => name.endsWith('.js')).map((name) => join(rootDir, 'lib', name)),
+  join(rootDir, 'README.md'),
+  join(rootDir, 'README.zh.md'),
+  join(rootDir, 'LICENSE'),
+  ...readdirSync(join(rootDir, 'src'), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.(ts|tsx|css|js)$/.test(entry.name))
+    .map((entry) => join(entry.parentPath, entry.name)),
+  ...readdirSync(join(rootDir, 'build'), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name !== 'dry-run.mjs' && /\.(js|mjs|ps1)$/.test(entry.name))
+    .map((entry) => join(entry.parentPath, entry.name)),
+]
+const offenders = []
+for (const target of shippedFiles) {
+  const lines = (await readFile(target, 'utf8')).split('\n')
+  lines.forEach((line, index) => {
+    if (line.includes('machine-path-ok')) return
+    for (const [name, test] of MACHINE_PATTERNS) {
+      if (test.test(line)) offenders.push(`${relative(rootDir, target).replaceAll('\\', '/')}:${index + 1} (${name})`)
+    }
+  })
+}
+if (offenders.length > 0) {
+  throw new Error(`a shipped file carries a machine-specific path: ${offenders.join('; ')}`)
+}
+console.log(`portability pass ✓ — ${shippedFiles.length} shipped file(s) free of machine paths`)
