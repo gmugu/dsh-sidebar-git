@@ -25,7 +25,6 @@ import type { SessionScope } from './api.ts'
 import { attachLocale, t } from './locales.ts'
 import { GitPanel } from './GitPanel.tsx'
 import { GitDiffPane } from './GitDiffPane.tsx'
-import { fileAddressFor } from './resource-address.ts'
 import { createGitStore, type GitStoreActions, type GitStoreState, type GitUseStore } from './store.ts'
 
 /** This implementation's identity in the tab system (unique across registrations). */
@@ -50,7 +49,6 @@ interface ClientContextLike {
       getSnapshot(): { byId: Record<string, { cwd?: string } | undefined> }
     }
   }
-  sidebarRight?: { openResource(address: string, options?: unknown): unknown }
   sidebarRightTabs?: {
     register(definition: Record<string, unknown>): () => void
   }
@@ -115,18 +113,11 @@ function GitTabBody(props: GitTabBodyProps): ReactNode {
   const preview = useStore((state: GitStoreState) => state.preview)
   const paneHeight = useStore((state: GitStoreState) => state.paneHeight)
 
-  /** Open one file through the native right sidebar's file preview. */
-  const openFile = (path: string): void => {
-    const address = fileAddressFor(sessionId, cwd, path)
-    void clientCtx?.sidebarRight?.openResource(address)
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <GitPanel
         scope={scope}
         visible={visible}
-        onOpenFile={openFile}
         onPreview={(ref) => { actions.setPreview(ref) }}
         selectedRef={preview}
         useStore={useStore}

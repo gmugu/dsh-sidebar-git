@@ -111,8 +111,8 @@ for (const action of ['publish', 'setCommitMsg', 'setPreview', 'setPaneHeight', 
   if (typeof spec.actions?.[action] !== 'function') throw new Error(`store spec is missing action "${action}"`)
 }
 const draft = spec.init()
-if (draft.view?.status !== null || draft.commitMsg !== '' || draft.preview !== null || draft.paneHeight !== 300) {
-  throw new Error('store init() must start with an empty view, no draft, no preview, 300px pane')
+if (draft.view?.status !== null || draft.commitMsg !== '' || draft.preview !== null || draft.paneHeight !== null) {
+  throw new Error('store init() must start with an empty view, no draft, no preview, an unsized pane')
 }
 if (draft.scopeKey !== '') throw new Error('store init() must start with an unapplied scope')
 spec.actions.publish(draft, { status: { isRepo: true, entries: [] }, error: null })

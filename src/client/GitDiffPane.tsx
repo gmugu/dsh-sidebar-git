@@ -34,8 +34,9 @@ export interface GitPreview {
 export interface GitDiffPaneProps {
   target: GitPreview
   scope: SessionScope
-  /** The persisted pane height (px); drag commits a new one upwards. */
-  height: number
+  /** The persisted pane height in px, or null while the pane has never been
+   *  dragged (it then takes half of the panel). */
+  height: number | null
   onHeightCommit: (height: number) => void
   onClose: () => void
 }
@@ -206,9 +207,13 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
   }, [diffText])
 
   // ── Resize: drag the top handle; commit on release (persisted by the
-  //    shell). Arrow keys resize by a step for keyboard users. ────────────
+  //    shell). Arrow keys resize by a step for keyboard users. Both read the
+  //    pane's RENDERED height as their origin, so an unsized pane (which
+  //    occupies half the panel) resizes from wherever it actually sits. ────
+  const paneRef = useRef<HTMLDivElement | null>(null)
   const [dragHeight, setDragHeight] = useState<number | null>(null)
   const paneHeight = dragHeight ?? height
+  const renderedHeight = (): number => paneRef.current?.offsetHeight ?? HEIGHT_MIN
   const clamp = (value: number): number => Math.min(Math.max(value, HEIGHT_MIN), Math.round(window.innerHeight * 0.7))
   const dragOrigin = useRef<{ y: number; h: number } | null>(null)
   // Pointer streams fire several times per frame; one setState per event
@@ -217,7 +222,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
   useEffect(() => () => dragBatcher.dispose(), [dragBatcher])
   const onHandleDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
     event.preventDefault()
-    dragOrigin.current = { y: event.clientY, h: paneHeight }
+    dragOrigin.current = { y: event.clientY, h: renderedHeight() }
     const onMove = (ev: PointerEvent): void => {
       if (dragOrigin.current === null) return
       const next = clamp(dragOrigin.current.h + (dragOrigin.current.y - ev.clientY))
@@ -241,7 +246,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
   const stats = gitStats
 
   return (
-    <div className={css.diffPane} style={{ height: paneHeight }}>
+    <div ref={paneRef} className={css.diffPane} style={{ height: paneHeight ?? '50%' }}>
       <div
         className={css.dragHandle}
         role="separator"
@@ -250,8 +255,8 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
         tabIndex={0}
         onPointerDown={onHandleDown}
         onKeyDown={(event) => {
-          if (event.key === 'ArrowUp') { event.preventDefault(); onHeightCommit(clamp(paneHeight + HEIGHT_STEP)) }
-          if (event.key === 'ArrowDown') { event.preventDefault(); onHeightCommit(clamp(paneHeight - HEIGHT_STEP)) }
+          if (event.key === 'ArrowUp') { event.preventDefault(); onHeightCommit(clamp(renderedHeight() + HEIGHT_STEP)) }
+          if (event.key === 'ArrowDown') { event.preventDefault(); onHeightCommit(clamp(renderedHeight() - HEIGHT_STEP)) }
         }}
       />
       <div className={css.diffHead}>

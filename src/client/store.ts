@@ -41,8 +41,9 @@ export interface GitStoreState {
   commitMsg: string
   /** The previewed change, or null when the preview pane is closed. */
   preview: SidebarDiffRef | null
-  /** The preview pane's committed height in px. */
-  paneHeight: number
+  /** The preview pane's committed height in px, or null while it has never
+   *  been dragged — the pane then takes half of the panel. */
+  paneHeight: number | null
   /**
    * The session scope (sessionId + cwd) this state was last used under.
    * Kept here, not in a component ref, so a remount can tell "same scope,
@@ -105,7 +106,7 @@ export function createGitStore(): GitStoreHandle {
       view: initialView(),
       commitMsg: '',
       preview: null,
-      paneHeight: 300,
+      paneHeight: null,
       scopeKey: '',
     }),
     actions: {

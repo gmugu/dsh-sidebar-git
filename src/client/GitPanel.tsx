@@ -17,14 +17,13 @@
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
-  Button, IconCodeOutline16, IconCopyOutline16, IconPlusOutline16,
-  IconRefreshOutline16, IconTrashOutline16, Input, Menu, Modal, writeClipboard,
+  Button, IconCopyOutline16, IconPlusOutline16,
+  IconRefreshOutline16, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitLogEntry, GitStatusEntry, SessionScope } from './api.ts'
 import { api } from './api.ts'
 import { usePolling } from './use-polling.ts'
-import { baseName, isWithinWorkspace, relativeTo } from './paths.ts'
-import { resolveSidebarPath } from './sidebar-path.ts'
+import { baseName } from './paths.ts'
 import { relativeTime, t } from './locales.ts'
 import type { GitStoreActions, GitStoreState, GitUseStore } from './store.ts'
 import type { SidebarDiffRef } from './types.ts'
@@ -75,11 +74,13 @@ function refNames(refs: string): string[] {
  * The discard glyph: an arrow curving back to the left (the row-level "undo
  * this change"). The primitives package ships no undo/rollback icon, and an
  * import it does not export is `undefined` — rendering that crashes React, so
- * the panel draws this one inline in the inherited text color. The staged
- * row's unstage action keeps the trash icon (a different meaning, and a
- * different icon, is what keeps the two inline actions apart).
+ * the panel draws this one inline in the inherited text color. The other inline
+ * action of a row is its stage/unstage glyph.
+ *
+ * Its 16-unit box and ~1.4-unit stroke weight match the plus/minus glyphs (a
+ * filled 1.3-unit-thick bar), so the three row actions read as one set.
  */
-function DiscardGlyph({ size = 14 }: { size?: number }) {
+function DiscardGlyph({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -94,6 +95,28 @@ function DiscardGlyph({ size = 14 }: { size?: number }) {
     >
       <path d="M5.6 3.2 2.2 6.6l3.4 3.4" />
       <path d="M2.2 6.6h6.6a4.2 4.2 0 0 1 0 8.4H6.6" />
+    </svg>
+  )
+}
+
+/**
+ * The unstage glyph: the plus's horizontal bar on its own, copied verbatim
+ * from `IconPlusOutline16`'s geometry (a filled 13-unit-wide bar, 1.30078
+ * units thick, x 1.5→14.5 at y 7.34961→8.65039). Drawing it as the same filled
+ * shape at the same 16-unit size is what keeps a staged row's minus aligned
+ * with an unstaged row's plus — a stroked line of its own length and weight
+ * reads as a smaller, different mark. Inline because primitives ships no minus.
+ */
+function MinusGlyph({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path d="M1.5 7.34961H14.5V8.65039H1.5Z" fill="currentColor" />
     </svg>
   )
 }
@@ -125,7 +148,6 @@ const WORKTREE_RECHECK_TICKS = 15
 
 export interface GitPanelProps {
   scope: SessionScope
-  onOpenFile: (path: string) => void
   /** Preview one change in the shared bottom pane (worktree or commit ref). */
   onPreview: (ref: SidebarDiffRef) => void
   /** The ref currently previewed (row highlight); null when the pane is closed. */
@@ -139,7 +161,7 @@ export interface GitPanelProps {
 }
 
 export function GitPanel(props: GitPanelProps) {
-  const { scope, onOpenFile, onPreview, selectedRef, visible, useStore, actions } = props
+  const { scope, onPreview, selectedRef, visible, useStore, actions } = props
   // The checkout-derived view lives in the registration's store, not in this
   // component: the dock unmounts a tab body when another tab is selected, so
   // component state would be discarded on every switch.
@@ -150,8 +172,6 @@ export function GitPanel(props: GitPanelProps) {
   const [commitError, setCommitError] = useState<string | null>(null)
   const [logLoadingMore, setLogLoadingMore] = useState(false)
 
-  /** The open file-row context menu (cursor position for the portaled Menu). */
-  const [fileMenu, setFileMenu] = useState<{ entry: GitStatusEntry; staged: boolean; x: number; y: number } | null>(null)
   /** The open history-row context menu. */
   const [historyMenu, setHistoryMenu] = useState<{ entry: GitLogEntry; x: number; y: number } | null>(null)
   /** The pending destructive action awaiting confirmation. */
@@ -473,12 +493,6 @@ export function GitPanel(props: GitPanelProps) {
     void writeClipboard(text)
   }
 
-  const openFileMenu = (event: MouseEvent, entry: GitStatusEntry, staged: boolean): void => {
-    event.preventDefault()
-    event.stopPropagation()
-    setFileMenu({ entry, staged, x: event.clientX, y: event.clientY })
-  }
-
   const openHistoryMenu = (event: MouseEvent, entry: GitLogEntry): void => {
     event.preventDefault()
     event.stopPropagation()
@@ -501,14 +515,12 @@ export function GitPanel(props: GitPanelProps) {
           className={css.gitRowMain}
           title={entry.path}
           onClick={() => { onPreview(worktreeRefOf(entry, staged)) }}
-          onContextMenu={(event) => { openFileMenu(event, entry, staged) }}
         >
           <span className={css.gitBadge} data-letter={badgeOf(entry)}>{badgeOf(entry)}</span>
           <span className={css.gitName}>{entry.path}</span>
         </button>
         {/* The unstaged row carries the row-level discard (reset a tracked
-            path to the index, delete an untracked one) left of stage, so a
-            single file can be reverted without opening the context menu. */}
+            path to the index, delete an untracked one) left of stage. */}
         {!staged && (
           <button
             type="button"
@@ -530,7 +542,7 @@ export function GitPanel(props: GitPanelProps) {
           disabled={busy}
           onClick={() => { void stageEntry(entry, staged) }}
         >
-          {staged ? <IconTrashOutline16 /> : <IconPlusOutline16 />}
+          {staged ? <MinusGlyph /> : <IconPlusOutline16 />}
         </button>
       </div>
     )
@@ -693,71 +705,6 @@ export function GitPanel(props: GitPanelProps) {
               </button>
             )}
           </div>
-
-          {/*
-            The one shared file-row context menu, positioned at the right-click
-            cursor (portal so the panel's overflow clip cannot crop it).
-          */}
-          <Menu
-            open={fileMenu !== null}
-            onClose={() => { setFileMenu(null) }}
-            items={[
-              // A linked worktree outside the session workspace cannot be
-              // opened while the workspace fence is armed: hide the action
-              // for that checkout so the menu does not offer a no-op.
-              // (Extraction: the fence is treated as always armed.)
-              ...(fileMenu !== null && isWithinWorkspace(scope.cwd ?? '', resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, fileMenu.entry.path))
-                ? [{ id: 'open', label: t('openEditor'), icon: <IconCodeOutline16 size={14} /> }]
-                : []),
-              fileMenu?.staged === true
-                ? { id: 'stage', label: t('unstage'), icon: <IconTrashOutline16 size={14} /> }
-                : { id: 'stage', label: t('stage'), icon: <IconPlusOutline16 size={14} /> },
-              ...(fileMenu !== null
-                ? [{
-                  id: 'discard',
-                  label: isUntracked(fileMenu.entry) ? t('deleteFile') : t('discard'),
-                  icon: <IconTrashOutline16 size={14} />,
-                  danger: true,
-                }]
-                : []),
-              { type: 'separator', id: 'sep1' },
-              { id: 'relative', label: t('copyRelative'), icon: <IconCopyOutline16 size={14} /> },
-              { id: 'absolute', label: t('copyAbsolute'), icon: <IconCopyOutline16 size={14} /> },
-            ]}
-            onSelect={(id) => {
-              const target = fileMenu
-              if (target === null) return
-              setFileMenu(null)
-              if (id === 'open') {
-                const resolved = resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, target.entry.path)
-                // Defense-in-depth: the menu hides this action when the
-                // resolved path escapes the session workspace, but a
-                // racing repo switch could still reach here with a path
-                // the host would reject. No-op in that case.
-                if (!isWithinWorkspace(scope.cwd ?? '', resolved)) return
-                onOpenFile(resolved)
-                return
-              }
-              if (id === 'stage') {
-                void stageEntry(target.entry, target.staged)
-                return
-              }
-              if (id === 'discard') {
-                discardEntry(target.entry)
-                return
-              }
-              if (id === 'relative') {
-                copy(relativeTo(repoRoot ?? selectedWorktree ?? scope.cwd ?? '', target.entry.path))
-                return
-              }
-              if (id === 'absolute') copy(resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, target.entry.path))
-            }}
-            portal
-            compact
-            align="start"
-            getAnchorRect={() => (fileMenu === null ? null : new DOMRect(fileMenu.x, fileMenu.y, 0, 0))}
-            anchor={<span />}
-          />
 
           {/* The shared history-row context menu. */}
           <Menu
