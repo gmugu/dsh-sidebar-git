@@ -124,3 +124,9 @@ refreshes in the background — no "加载中…" flash, no lost draft.
   cannot touch a path the index does not know).
 - Route prefix `/git-panel/api`; locale reduced to the zh/en keys this panel
   uses.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Portions are derived from
+[dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) (MIT); its
+notice is reproduced at the end of the same file.

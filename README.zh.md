@@ -105,3 +105,9 @@ store（注册项里的 `store: createGitStore()`，来自
   门，新文件因此什么都画不出来）；未跟踪文件的回退（上游 `discard` 只会
   `git checkout --`，对索引里没有的路径无能为力）。
 - 路由前缀 `/git-panel/api`；文案精简为本面板实际用到的 zh/en 键。
+
+## 许可
+
+MIT —— 见 [LICENSE](LICENSE)。部分代码来自
+[dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)（MIT），
+其版权声明一并附在该文件末尾。
