@@ -90,6 +90,19 @@
   text-decoration: underline;
 }
 
+/* The bulk actions of a section header (discard all / stage all) sit as one
+   right-aligned cluster. */
+.gitSectionActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A destructive bulk action keeps the link's size and turns red. */
+.gitLink[data-danger='true'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .gitLink:disabled {
   opacity: 0.4;
   cursor: default;
@@ -386,6 +399,9 @@
 .iconButton:disabled { opacity: 0.4; cursor: default; }
 
 .paneBody { flex: 1; min-height: 0; overflow-y: auto; }
+/* A one-line notice above the document: a capped read, or a binary file with
+   nothing to draw. */
+.paneNotice { padding: 5px 10px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxxs-11); border-bottom: 1px solid var(--dsw-alias-border-l1); }
 .readError { color: var(--dsw-alias-state-error-primary); border-left: 3px solid var(--dsw-alias-state-error-primary); border-radius: 0 6px 6px 0; margin: 6px 8px; padding: 6px 10px; white-space: pre-wrap; word-break: break-word; }
 .priorUnknown { color: var(--dsw-alias-label-tertiary); font-size: 10px; padding: 3px 10px; }
 

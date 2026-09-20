@@ -58,7 +58,7 @@ export interface GitLogEntry {
 }
 
 /** Text read result (the untracked diff fallback reads whole files). */
-export interface FsTextResult { kind: 'text'; content: string; truncated: boolean }
+export interface FsTextResult { kind: 'text'; content: string; truncated: boolean; size: number }
 /** Binary read result (no content; the diff stack renders a notice). */
 export interface FsBinaryResult { kind: 'binary'; size: number; truncated: boolean; head: string }
 

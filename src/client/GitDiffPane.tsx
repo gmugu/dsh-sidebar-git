@@ -25,6 +25,14 @@ import diffCss from './diff/diff.module.css'
 const HEIGHT_MIN = 140
 const HEIGHT_STEP = 24
 
+/** A byte count as KiB/MiB text for the pane's notices. */
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '?'
+  if (bytes < 1024) return `${String(bytes)} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+}
+
 /** What the pane is showing: one git target. */
 export interface GitPreview {
   kind: 'git'
@@ -57,6 +65,9 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
   // expansion must read that side's revisions (else the sliced line numbers
   // land on the wrong contents).
   const [effectiveStaged, setEffectiveStaged] = useState<boolean | null>(null)
+  /** What the document cannot show by itself: a capped read or a binary file
+   *  (the body then holds nothing to draw). */
+  const [notice, setNotice] = useState<string | null>(null)
   const gitRef = target.ref
   // The scope every git call of this target shares (repoRoot folded in when
   // the ref carries one, exactly like the load effect's paneScope).
@@ -79,6 +90,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
     setDiffText(null)
     setUntracked(undefined)
     setEffectiveStaged(null)
+    setNotice(null)
 
     const load = async (): Promise<void> => {
       try {
@@ -97,9 +109,16 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
           const text = await api.fsRead(paneScope, resolveSidebarPath(gitRef.repoRoot ?? gitRef.worktree ?? scope.cwd, gitRef.path))
           if (!cancelled) {
             setDiffText('')
-            // A binary file has no text to draw: the empty document shows the
-            // pane's "no text changes" note instead of a blank body.
-            if (text.kind === 'text') setUntracked(text.content)
+            if (text.kind === 'text') {
+              setUntracked(text.content)
+              // The host caps a read at 2 MiB (`READ_LIMIT`); say so instead of
+              // presenting a cut document as the whole file.
+              if (text.truncated) setNotice(t('diffTruncated', { size: formatBytes(text.size) }))
+            } else {
+              // A binary file has nothing to draw: the document stays empty and
+              // the notice names what it is.
+              setNotice(t('diffBinaryNotice', { size: formatBytes(text.size) }))
+            }
           }
           return
         }
@@ -194,17 +213,24 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
   }, [gitRef, gitScope, effectiveStaged, scope])
 
   // Header stats come off the parsed patch text.
+  // One parse per loaded patch: the header's +N/−M chips and the document
+  // itself (handed to DiffFiles below) share this result instead of each
+  // parsing the same text.
+  const parsedPatch = useMemo(
+    () => (diffText === null || diffText === '' ? null : parseUnifiedDiff(diffText)),
+    [diffText],
+  )
   const gitStats = useMemo(() => {
-    if (diffText === null || diffText === '') return null
+    if (parsedPatch === null) return null
     let added = 0
     let deleted = 0
-    for (const file of parseUnifiedDiff(diffText).files) {
+    for (const file of parsedPatch.files) {
       const stats = diffStats(unifiedSegments(file))
       added += stats.added
       deleted += stats.deleted
     }
     return { added, deleted }
-  }, [diffText])
+  }, [parsedPatch])
 
   // ── Resize: drag the top handle; commit on release (persisted by the
   //    shell). Arrow keys resize by a step for keyboard users. Both read the
@@ -299,6 +325,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
           ? <div className={css.paneBody}><div className={css.gitError}>{t('diffLoadError')}: {error}</div></div>
           : (
             <div className={css.paneBody}>
+              {notice !== null && <div className={css.paneNotice}>{notice}</div>}
               {/* An untracked target carries no diff text at all — git never
                   emits one — and renders from its content instead, so the
                   document gate must accept that pair. Gating on non-empty diff
@@ -312,11 +339,12 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
                   diff={diffText ?? ''}
                   resolveFold={foldLoader}
                   startFolded={gitRef.kind === 'commit'}
+                  parsedFiles={parsedPatch === null ? undefined : parsedPatch.files}
                   untrackedPath={untracked !== undefined && gitRef.kind === 'worktree' ? gitRef.path : undefined}
                   untrackedContent={untracked}
                 />
               )}
-              {diffText === '' && untracked === undefined && (
+              {diffText === '' && untracked === undefined && notice === null && (
                 <div className={css.gitEmpty}>{t('diffEmpty')}</div>
               )}
             </div>

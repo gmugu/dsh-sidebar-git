@@ -89,6 +89,10 @@ const READ_LIMIT = 2 << 20
  * what the client's untracked full-addition fallback switches on
  * (`text.kind === 'text'`). A slim `{ binary }` flag instead left that branch
  * dead: every untracked preview rendered an empty pane and no error.
+ *
+ * Both branches also carry the file's real `size` and the `truncated` flag, so
+ * the pane can say what it is showing (a capped read, or a binary file it
+ * cannot draw) instead of silently cutting the document.
  */
 async function readText(path, readLimit) {
   const info = await stat(path).catch((error) => {
@@ -114,7 +118,7 @@ async function readText(path, readLimit) {
         head: slice.subarray(0, Math.min(slice.length, READ_HEAD_LIMIT)).toString('base64'),
       }
     }
-    return { kind: 'text', content: slice.toString('utf8'), truncated }
+    return { kind: 'text', content: slice.toString('utf8'), truncated, size }
   } finally {
     await handle.close()
   }

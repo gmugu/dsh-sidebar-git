@@ -169,7 +169,9 @@ export function GitPanel(props: GitPanelProps) {
   const commitMsg = useStore((state: GitStoreState) => state.commitMsg)
   const { status, worktrees, selectedWorktree, repoRoot, branchNames, logEntries, logEnded, error } = view
   const [busy, setBusy] = useState(false)
-  const [commitError, setCommitError] = useState<string | null>(null)
+  /** The panel's one error banner: commit, checkout, stage/unstage, discard and
+   *  the history pager all report through it (there is no per-row error line). */
+  const [actionError, setActionError] = useState<string | null>(null)
   const [logLoadingMore, setLogLoadingMore] = useState(false)
 
   /** The open history-row context menu. */
@@ -370,7 +372,7 @@ export function GitPanel(props: GitPanelProps) {
       })
     } catch (reason) {
       if (generation === refreshGeneration.current && target === chosenPathRef.current) {
-        setCommitError(`${t('historyLoadError')}: ${errorMessage(reason)}`)
+        setActionError(`${t('historyLoadError')}: ${errorMessage(reason)}`)
       }
     } finally {
       if (generation === refreshGeneration.current && target === chosenPathRef.current) setLogLoadingMore(false)
@@ -406,10 +408,13 @@ export function GitPanel(props: GitPanelProps) {
 
   const stageEntry = async (entry: GitStatusEntry, staged: boolean): Promise<void> => {
     setBusy(true)
+    setActionError(null)
     try {
       if (staged) await api.gitUnstage(gitScope, entry.path, selectedWorktree)
       else await api.gitStage(gitScope, entry.path, selectedWorktree)
       await refresh()
+    } catch (reason) {
+      setActionError(errorMessage(reason))
     } finally {
       setBusy(false)
     }
@@ -417,10 +422,13 @@ export function GitPanel(props: GitPanelProps) {
 
   const stageAll = async (staged: boolean): Promise<void> => {
     setBusy(true)
+    setActionError(null)
     try {
       if (staged) await api.gitUnstage(gitScope, undefined, selectedWorktree)
       else await api.gitStage(gitScope, undefined, selectedWorktree)
       await refresh()
+    } catch (reason) {
+      setActionError(errorMessage(reason))
     } finally {
       setBusy(false)
     }
@@ -442,17 +450,35 @@ export function GitPanel(props: GitPanelProps) {
     })
   }
 
+  /** Discard every unstaged row — the section's bulk action. Sequential on
+   *  purpose: each call takes git's index lock, and a parallel burst of
+   *  `git checkout --` / `git clean` on one repository can collide on it. */
+  const discardAll = (): void => {
+    const tracked = unstagedEntries.filter(entry => !isUntracked(entry)).length
+    const untracked = unstagedEntries.filter(entry => isUntracked(entry)).length
+    runConfirmed({
+      title: t('discardAllTitle'),
+      description: t('discardAllDesc', { tracked, untracked }),
+      confirmLabel: t('discardAll'),
+      onConfirm: async () => {
+        for (const entry of unstagedEntries) {
+          await api.gitDiscard(gitScope, entry.path, selectedWorktree)
+        }
+      },
+    })
+  }
+
   const commit = async (): Promise<void> => {
     const message = commitMsg.trim()
     if (message === '' || busy) return
     setBusy(true)
-    setCommitError(null)
+    setActionError(null)
     try {
       await api.gitCommit(gitScope, message, selectedWorktree)
       actions.setCommitMsg('')
       await refresh()
     } catch (reason) {
-      setCommitError(errorMessage(reason))
+      setActionError(errorMessage(reason))
     } finally {
       setBusy(false)
     }
@@ -461,12 +487,12 @@ export function GitPanel(props: GitPanelProps) {
   const checkout = async (branch: string): Promise<void> => {
     if (branch === status?.branch || busy) return
     setBusy(true)
-    setCommitError(null)
+    setActionError(null)
     try {
       await api.gitCheckout(gitScope, branch, selectedWorktree)
       await refresh()
     } catch (reason) {
-      setCommitError(`${t('checkoutError')}: ${errorMessage(reason)}`)
+      setActionError(`${t('checkoutError')}: ${errorMessage(reason)}`)
     } finally {
       setBusy(false)
     }
@@ -476,12 +502,12 @@ export function GitPanel(props: GitPanelProps) {
   const runConfirmed = (confirmState: ConfirmState): void => {
     setConfirm({ ...confirmState, onConfirm: async () => {
       setBusy(true)
-      setCommitError(null)
+      setActionError(null)
       try {
         await confirmState.onConfirm()
         await refresh()
       } catch (reason) {
-        setCommitError(errorMessage(reason))
+        setActionError(errorMessage(reason))
       } finally {
         setBusy(false)
       }
@@ -632,9 +658,14 @@ export function GitPanel(props: GitPanelProps) {
             <div className={css.gitSectionHeader}>
               <span>{t('unstaged')} ({unstagedEntries.length})</span>
               {unstagedEntries.length > 0 && (
-                <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageAll(false) }}>
-                  {t('stageAll')}
-                </button>
+                <span className={css.gitSectionActions}>
+                  <button type="button" className={css.gitLink} data-danger="true" disabled={busy} onClick={() => { discardAll() }}>
+                    {t('discardAll')}
+                  </button>
+                  <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageAll(false) }}>
+                    {t('stageAll')}
+                  </button>
+                </span>
               )}
             </div>
             {unstagedEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
@@ -647,7 +678,7 @@ export function GitPanel(props: GitPanelProps) {
               placeholder={t('commitPlaceholder')}
               value={commitMsg}
               disabled={busy}
-              onChange={(event) => { actions.setCommitMsg(event.target.value); setCommitError(null) }}
+              onChange={(event) => { actions.setCommitMsg(event.target.value); setActionError(null) }}
               onKeyDown={(event) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void commit()
               }}
@@ -661,7 +692,7 @@ export function GitPanel(props: GitPanelProps) {
               {t('commit')}
             </button>
           </div>
-          {commitError !== null && <div className={css.gitError}>{commitError}</div>}
+          {actionError !== null && <div className={css.gitError}>{actionError}</div>}
 
           <div className={css.gitSection}>
             <div className={css.gitSectionHeader}><span>{t('history')}</span></div>

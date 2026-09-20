@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { t } from '../locales.ts'
-import { diffStats, displayPath, parseUnifiedDiff, unifiedSegments, untrackedFile, type DiffFile, type DiffRow, type FoldSegment } from './rows.ts'
+import { diffStats, displayPath, parseUnifiedDiff, unifiedSegments, untrackedFile, type DiffFile, type DiffRow, type FoldSegment, type ParsedDiff } from './rows.ts'
 import { langOfPath } from './highlight.ts'
 import { DiffRows } from './DiffRows.tsx'
 import css from './diff.module.css'
@@ -56,6 +56,10 @@ export interface DiffFilesProps {
   /** Start every file folded (a commit patch): its headers still name each
    *  file, and the reader unfolds what to read. */
   startFolded?: boolean
+  /** An already-parsed document. The pane parses a patch once for its own
+   *  header stats and hands the result here, so the text is not parsed twice;
+   *  absent (a standalone caller), `diff` is parsed here as before. */
+  parsedFiles?: readonly DiffFile[]
   /** Fetch a git gap fold's hidden rows on demand (both sides' contents by
    *  the fold's line ranges); forwarded to every file's DiffRows. Absent
    *  folds without `rows` stay non-expandable (session-op diffs and
@@ -63,13 +67,14 @@ export interface DiffFilesProps {
   resolveFold?: (file: DiffFile, segment: FoldSegment) => Promise<readonly DiffRow[]>
 }
 
-export function DiffFiles({ diff, untrackedPath, untrackedContent, startFolded = false, resolveFold }: DiffFilesProps) {
-  const parsed = useMemo(() => {
+export function DiffFiles({ diff, untrackedPath, untrackedContent, startFolded = false, parsedFiles, resolveFold }: DiffFilesProps) {
+  const parsed = useMemo<ParsedDiff>(() => {
+    if (parsedFiles !== undefined) return { files: [...parsedFiles] }
     if (untrackedPath !== undefined) {
       return { files: [untrackedFile(untrackedPath, untrackedContent ?? '')] }
     }
     return parseUnifiedDiff(diff)
-  }, [diff, untrackedPath, untrackedContent])
+  }, [parsedFiles, diff, untrackedPath, untrackedContent])
   const [expandedFiles, setExpandedFiles] = useState<Set<number>>(() => defaultExpandedFiles(parsed.files, startFolded))
   useEffect(() => { setExpandedFiles(defaultExpandedFiles(parsed.files, startFolded)) }, [parsed, startFolded])
 
