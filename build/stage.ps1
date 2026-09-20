@@ -10,7 +10,11 @@ New-Item -ItemType Directory -Path $staged -Force | Out-Null
 Copy-Item (Join-Path $pkg 'package.json'), (Join-Path $pkg 'cordis.patch.yml') $staged -Force
 if (Test-Path "$staged\lib") { Remove-Item "$staged\lib" -Recurse -Force }
 Copy-Item (Join-Path $pkg 'lib') "$staged\lib" -Recurse -Force
-if (Test-Path (Join-Path $pkg 'README.md')) { Copy-Item (Join-Path $pkg 'README.md') $staged -Force }
+# Every shipped doc (the package carries both language versions).
+foreach ($doc in 'README.md', 'README.zh.md') {
+  $path = Join-Path $pkg $doc
+  if (Test-Path $path) { Copy-Item $path $staged -Force }
+}
 
 $link = "C:\Users\admin\.dsh\profiles\web\node_modules\dsh-sidebar-git"
 $item = Get-Item $link -ErrorAction SilentlyContinue

@@ -27,7 +27,8 @@
   },
   "license": "MIT",
   "scripts": {
-    "build": "node build/build.js"
+    "build": "node build/build.js",
+    "probe": "node build/probe/run.mjs"
   },
   "devDependencies": {
     "clsx": "^2.1.1",

@@ -28,8 +28,8 @@ const requireStubs = {
   'react-dom/client': {},
   '@deepseek-ai/dsh-client-ui-primitives': {
     Button: () => null, Input: () => null, Menu: () => null, Modal: () => null,
-    IconCodeOutline16: () => null, IconCopyOutline16: () => null, IconPlusOutline16: () => null,
-    IconRefreshOutline16: () => null, IconTrashOutline16: () => null, IconBranchOutline16: () => null,
+    IconCopyOutline16: () => null, IconPlusOutline16: () => null,
+    IconRefreshOutline16: () => null, IconBranchOutline16: () => null,
     writeClipboard: () => {},
   },
   clsx: (...args) => args.filter(Boolean).join(' '),
@@ -161,3 +161,38 @@ if (registered.tabs.length !== 1 || registered.panes.length !== 1 || registered.
   throw new Error('guarded-facade pass did not register everything')
 }
 console.log('GUARDED-FACADE PASS OK — no undeclared access, no ctx.inject wait')
+
+// ── Source-level parity the bundle cannot show (this project has no tsc step):
+//    every method the client calls must be a route the host answers, and both
+//    locale dictionaries must carry the same keys. Both are pure string checks
+//    over the sources, so a typo in a method name or a half-added copy key -
+//    which would only surface at runtime (a 404, or a raw key on screen) - fails
+//    the build instead.
+const { readFile } = await import('node:fs/promises')
+const { fileURLToPath } = await import('node:url')
+const source = (relative) => readFile(fileURLToPath(new URL(relative, import.meta.url)), 'utf8')
+
+const apiSource = await source('../src/client/api.ts')
+const hostSource = await source('../src/host/index.js')
+const clientMethods = [...apiSource.matchAll(/call<[^>]*>\('([^']+)'/g)].map((match) => match[1])
+const hostRoutes = [...hostSource.matchAll(/^\s*'([a-z][a-z-]*\.[a-z-]+)':/gm)].map((match) => match[1])
+const clientOnly = clientMethods.filter((name) => !hostRoutes.includes(name))
+const hostOnly = hostRoutes.filter((name) => !clientMethods.includes(name))
+if (clientOnly.length > 0 || hostOnly.length > 0) {
+  throw new Error(`route/api mismatch — client calls without a route: ${clientOnly.join(', ') || 'none'}; routes never called: ${hostOnly.join(', ') || 'none'}`)
+}
+console.log(`route/api parity ✓ — ${new Set(clientMethods).size} method(s)`)
+
+const localeSource = await source('../src/client/locales.ts')
+const zhStart = localeSource.indexOf('export const zh')
+const enStart = localeSource.indexOf('export const en')
+if (zhStart < 0 || enStart < 0 || enStart < zhStart) throw new Error('locales.ts: cannot find the zh and en dictionaries')
+const keysIn = (text) => [...text.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9]*):/gm)].map((match) => match[1])
+const zhKeys = keysIn(localeSource.slice(zhStart, enStart))
+const enKeys = keysIn(localeSource.slice(enStart))
+const zhOnly = zhKeys.filter((key) => !enKeys.includes(key))
+const enOnly = enKeys.filter((key) => !zhKeys.includes(key))
+if (zhOnly.length > 0 || enOnly.length > 0) {
+  throw new Error(`locale key mismatch — zh only: ${zhOnly.join(', ') || 'none'}; en only: ${enOnly.join(', ') || 'none'}`)
+}
+console.log(`locale parity ✓ — ${zhKeys.length} key(s)`)
