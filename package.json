@@ -26,6 +26,14 @@
     }
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gmugu/dsh-sidebar-git.git"
+  },
+  "homepage": "https://github.com/gmugu/dsh-sidebar-git#readme",
+  "bugs": {
+    "url": "https://github.com/gmugu/dsh-sidebar-git/issues"
+  },
   "scripts": {
     "build": "node build/build.js",
     "probe": "node build/probe/run.mjs"

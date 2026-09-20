@@ -7,3 +7,7 @@ lib/.built
 # Local npm cache / logs
 .npm-cache/
 *.log
+
+# Scratch files from a working session (plan documents, test fixtures): never
+# published, and a stray `git add -A` must not pick them up.
+tmp-*
