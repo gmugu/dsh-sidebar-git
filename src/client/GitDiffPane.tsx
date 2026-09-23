@@ -9,7 +9,7 @@
  * readers, redaction) is deliberately not carried over.
  */
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { IconCloseOutline16, IconRefreshOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionScope } from './api.ts'
 import { api } from './api.ts'
 import { t } from './locales.ts'
@@ -307,7 +307,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
           disabled={loading}
           onClick={() => { setTick(value => value + 1) }}
         >
-          <IconRefreshOutline16 size={14} />
+          <IconRefreshOutlineRegular size={14} />
         </button>
         <button
           type="button"
@@ -316,7 +316,7 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
           title={t('changesClosePreview')}
           onClick={onClose}
         >
-          <IconCloseOutline16 size={14} />
+          <IconCloseOutlineRegular size={14} />
         </button>
       </div>
       {loading

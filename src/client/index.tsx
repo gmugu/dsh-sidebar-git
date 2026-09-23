@@ -20,7 +20,7 @@
  * client activation sequence for later packages.
  */
 import { useMemo, useSyncExternalStore, type ReactNode } from 'react'
-import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionScope } from './api.ts'
 import { attachLocale, t } from './locales.ts'
 import { GitPanel } from './GitPanel.tsx'
@@ -73,14 +73,14 @@ function useSessionCwd(sessionId: string): string | undefined {
 
 /** The guide capsule glyph — the branch glyph primitives actually ships. */
 function GitGlyph(props?: { size?: number }): ReactNode {
-  return <IconBranchOutline16 size={props?.size ?? 16} />
+  return <IconBranchOutlineRegular size={props?.size ?? 16} />
 }
 
 /** The tab chip's title: the git branch glyph before the label (live locale). */
 function GitTabTitle(): ReactNode {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <IconBranchOutline16 size={14} />
+      <IconBranchOutlineRegular size={14} />
       {t('git')}
     </span>
   )

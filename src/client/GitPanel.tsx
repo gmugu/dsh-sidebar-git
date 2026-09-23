@@ -17,8 +17,8 @@
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
-  Button, IconCopyOutline16, IconPlusOutline16,
-  IconRefreshOutline16, Input, Menu, Modal, writeClipboard,
+  Button, IconCopyOutlineRegular, IconPlusOutlineMedium,
+  IconRefreshOutlineRegular, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitLogEntry, GitStatusEntry, SessionScope } from './api.ts'
 import { api } from './api.ts'
@@ -100,12 +100,13 @@ function DiscardGlyph({ size = 16 }: { size?: number }) {
 }
 
 /**
- * The unstage glyph: the plus's horizontal bar on its own, copied verbatim
- * from `IconPlusOutline16`'s geometry (a filled 13-unit-wide bar, 1.30078
- * units thick, x 1.5→14.5 at y 7.34961→8.65039). Drawing it as the same filled
- * shape at the same 16-unit size is what keeps a staged row's minus aligned
- * with an unstaged row's plus — a stroked line of its own length and weight
- * reads as a smaller, different mark. Inline because primitives ships no minus.
+ * The unstage glyph: the plus's horizontal bar on its own, as the exact
+ * filled equivalent of `IconPlusOutlineMedium`'s bar (path `M2 8H14` stroked
+ * 1.3 units with butt caps → a filled 12-unit-wide bar, 1.3 units thick,
+ * x 2→14 at y 7.35→8.65). Drawing it as the same filled shape at the same
+ * 16-unit size is what keeps a staged row's minus aligned with an unstaged
+ * row's plus — a stroked line of its own length and weight reads as a
+ * smaller, different mark. Inline because primitives ships no minus.
  */
 function MinusGlyph({ size = 16 }: { size?: number }) {
   return (
@@ -116,7 +117,7 @@ function MinusGlyph({ size = 16 }: { size?: number }) {
       fill="none"
       aria-hidden="true"
     >
-      <path d="M1.5 7.34961H14.5V8.65039H1.5Z" fill="currentColor" />
+      <path d="M2 7.35H14V8.65H2Z" fill="currentColor" />
     </svg>
   )
 }
@@ -568,7 +569,7 @@ export function GitPanel(props: GitPanelProps) {
           disabled={busy}
           onClick={() => { void stageEntry(entry, staged) }}
         >
-          {staged ? <MinusGlyph /> : <IconPlusOutline16 />}
+          {staged ? <MinusGlyph /> : <IconPlusOutlineMedium />}
         </button>
       </div>
     )
@@ -622,7 +623,7 @@ export function GitPanel(props: GitPanelProps) {
           title={t('refresh')}
           onClick={() => { void refresh() }}
         >
-          <IconRefreshOutline16 size={14} />
+          <IconRefreshOutlineRegular size={14} />
         </button>
       </div>
 
@@ -743,9 +744,9 @@ export function GitPanel(props: GitPanelProps) {
             onClose={() => { setHistoryMenu(null) }}
             items={[
               { id: 'view', label: t('viewCommitDiff') },
-              { id: 'copyShort', label: t('copyShortHash'), icon: <IconCopyOutline16 size={14} /> },
-              { id: 'copyFull', label: t('copyFullHash'), icon: <IconCopyOutline16 size={14} /> },
-              { id: 'copySubject', label: t('copySubject'), icon: <IconCopyOutline16 size={14} /> },
+              { id: 'copyShort', label: t('copyShortHash'), icon: <IconCopyOutlineRegular size={14} /> },
+              { id: 'copyFull', label: t('copyFullHash'), icon: <IconCopyOutlineRegular size={14} /> },
+              { id: 'copySubject', label: t('copySubject'), icon: <IconCopyOutlineRegular size={14} /> },
               { type: 'separator', id: 'sep2' },
               { id: 'revert', label: t('revertCommit'), danger: true },
               { id: 'cherryPick', label: t('cherryPickCommit'), danger: true },

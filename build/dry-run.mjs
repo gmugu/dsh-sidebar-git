@@ -28,8 +28,9 @@ const requireStubs = {
   'react-dom/client': {},
   '@deepseek-ai/dsh-client-ui-primitives': {
     Button: () => null, Input: () => null, Menu: () => null, Modal: () => null,
-    IconCopyOutline16: () => null, IconPlusOutline16: () => null,
-    IconRefreshOutline16: () => null, IconBranchOutline16: () => null,
+    IconCloseOutlineRegular: () => null, IconCopyOutlineRegular: () => null,
+    IconPlusOutlineMedium: () => null, IconRefreshOutlineRegular: () => null,
+    IconBranchOutlineRegular: () => null,
     writeClipboard: () => {},
   },
   clsx: (...args) => args.filter(Boolean).join(' '),
