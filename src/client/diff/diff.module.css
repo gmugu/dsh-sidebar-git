@@ -8,7 +8,7 @@
 
 .rows { padding: 4px 0 8px; font-family: var(--ds-font-family-code, monospace); font-size: 11px; }
 .row { display: flex; align-items: flex-start; gap: 5px; padding: 0 10px; line-height: 18px; cursor: default; }
-.row[data-folded='true'] { cursor: pointer; }
+.row[data-long='true'] { cursor: pointer; }
 .lineNo { flex: none; width: 2.5em; color: var(--dsw-alias-label-tertiary); text-align: right; user-select: none; font-size: 10px; }
 .sign { flex: none; width: 1em; text-align: center; user-select: none; font-weight: 700; }
 

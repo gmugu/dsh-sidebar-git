@@ -30,12 +30,16 @@ import { createGitStore, type GitStoreActions, type GitStoreState, type GitUseSt
 /** This implementation's identity in the tab system (unique across registrations). */
 const TAB_ID = 'dsh-sidebar-git:git'
 
+/** The global command that opens/focuses the Git tab (shortcuts registry id). */
+const SHORTCUT_ID = 'dsh-sidebar-git:open'
+
 /**
  * Required browser services. `sidebarRightTabs` must be declared here: direct
  * service access is gated by this declaration, and the declaration is also
- * what parks the plugin until the registry exists.
+ * what parks the plugin until the registry exists. `shortcuts` and
+ * `sidebarRight` gate the global open-shortcut's registry and navigation face.
  */
-export const inject = ['slots', 'locale', 'sessions', 'sidebarRightTabs']
+export const inject = ['slots', 'locale', 'sessions', 'sidebarRightTabs', 'shortcuts', 'sidebarRight']
 
 /** Structural faces this entry consumes (no runtime imports behind them). */
 interface ClientContextLike {
@@ -51,6 +55,13 @@ interface ClientContextLike {
   }
   sidebarRightTabs?: {
     register(definition: Record<string, unknown>): () => void
+  }
+  shortcuts?: {
+    register(command: Record<string, unknown>): () => void
+  }
+  sidebarRight?: {
+    commandTarget(element?: Element | null): unknown
+    openTabFromTarget(kind: string, target: unknown): void
   }
   slots: {
     inject(key: string, callback: () => unknown): { dispose(): void }
@@ -158,6 +169,9 @@ function gitDefinition(): Record<string, unknown> {
       title: () => t('git'),
       description: () => t('guideDescGit'),
       icon: GitGlyph,
+      // The shortcut registry command whose effective keys the capsule shows
+      // (SidebarRightGuideEntry.commandId — displayed once we register it).
+      commandId: SHORTCUT_ID,
     }],
   }
 }
@@ -183,6 +197,40 @@ export function apply(ctx: ClientContextLike): void {
       return
     }
     ctx.effect(() => tabs.register(gitDefinition()), 'dsh-sidebar-git: git tab type')
+    // The global open/focus shortcut (the shipped files panel's pattern): the
+    // resolver captures the live DOM target, the navigation controller turns
+    // it into an open aimed at the pane the user is in. No mounted session
+    // (or a stale sidebar target) resolves blocked with a localized reason.
+    const shortcuts = ctx.shortcuts
+    const sidebarRight = ctx.sidebarRight
+    if (shortcuts !== undefined && sidebarRight !== undefined) {
+      ctx.effect(() => shortcuts.register({
+        id: SHORTCUT_ID,
+        label: () => t('git'),
+        aliases: ['git', 'git panel'],
+        // Ctrl+Alt+G (⌘+Alt+G on macOS): the files panel owns primary+alt+P;
+        // 'primary' expands to Meta on macOS and Control elsewhere. Linux web
+        // is deliberately undeclared: register() validates every profile at
+        // registration and Linux's web allowlist (Ctrl+/, Ctrl+Shift+,/.)
+        // rejects primary+alt, so an absent profile is the shipped pattern
+        // (files does the same); Linux users bind it in shortcut settings.
+        defaults: {
+          'web:macos': { code: 'KeyG', modifiers: ['primary', 'alt'] },
+          'web:windows': { code: 'KeyG', modifiers: ['primary', 'alt'] },
+        },
+        regions: ['page', 'editable', 'terminal'],
+        modals: [],
+        resolve: ({ target: element }: { target?: Element | null }) => {
+          const target = sidebarRight.commandTarget(element)
+          if (target === undefined) {
+            return { status: 'blocked', reason: t('shortcutNoSession') }
+          }
+          return { status: 'handled', run: () => { sidebarRight.openTabFromTarget('git', target) } }
+        },
+      }), 'dsh-sidebar-git: git tab shortcut')
+    } else {
+      console.error('[dsh-sidebar-git] shortcuts or sidebarRight service is unavailable')
+    }
     // The store is declared on the body registration ("exclusive store"), so
     // the framework mints one instance per session and hands the body
     // `useStore`/`actions` — panel state then survives the body unmounting

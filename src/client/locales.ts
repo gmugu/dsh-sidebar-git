@@ -11,6 +11,7 @@
 export const zh = {
   git: 'Git',
   guideDescGit: 'Git 状态、暂存与提交、分支与历史',
+  shortcutNoSession: '请先选择会话',
   worktree: '工作树',
   refresh: '刷新',
   loading: '加载中…',
@@ -77,6 +78,7 @@ export const zh = {
 export const en: Record<keyof typeof zh, string> = {
   git: 'Git',
   guideDescGit: 'Git status, staging & commit, branches and history',
+  shortcutNoSession: 'Select a session first',
   worktree: 'Worktree',
   refresh: 'Refresh',
   loading: 'Loading…',

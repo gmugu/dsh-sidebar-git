@@ -15,7 +15,8 @@ import { coalesceInline, diffInline, MIN_FOLD, type DiffRow, type DiffSegment, t
 import { hasBlockComment, isColored, scanLine, type CodeToken, type TokenType } from './highlight.ts'
 import css from './diff.module.css'
 
-/** Long diff lines fold to one ellipsized row; the threshold is the char count. */
+/** Long diff lines expand by default; beyond this char count a row can fold
+ *  to one ellipsized line (click to toggle). */
 const FOLD_THRESHOLD = 120
 
 /** Rendered hunk rows per file capped at this count; expand reveals the rest. */
@@ -116,8 +117,8 @@ export interface DiffRowsProps {
 
 /** One file's diff rows: fold chips between hunks, highlighted code rows. */
 export function DiffRows({ segments, lang, resolveFold }: DiffRowsProps) {
-  // Long diff lines fold to one ellipsized row; the set holds expanded row keys.
-  const [expandedLines, setExpandedLines] = useState<ReadonlySet<string>>(new Set())
+  // Long diff lines expand by default; the set holds folded row keys.
+  const [foldedLines, setFoldedLines] = useState<ReadonlySet<string>>(new Set())
   // Hunk-fold segments expanded by index; default collapsed.
   const [expandedFolds, setExpandedFolds] = useState<ReadonlySet<number>>(new Set())
   // Row-count cap expanded: a huge file renders head rows plus this button.
@@ -131,7 +132,7 @@ export function DiffRows({ segments, lang, resolveFold }: DiffRowsProps) {
   const foldEpoch = useRef(0)
   // Reset all folding when the segments identity changes (new target).
   useEffect(() => {
-    setExpandedLines(new Set())
+    setFoldedLines(new Set())
     setExpandedFolds(new Set())
     setExpandedAll(false)
     setFoldData(new Map())
@@ -153,16 +154,17 @@ export function DiffRows({ segments, lang, resolveFold }: DiffRowsProps) {
       )
     }
     const isLong = row.text.length > FOLD_THRESHOLD
-    const isFolded = isLong && !expandedLines.has(rowKey)
+    const isFolded = isLong && foldedLines.has(rowKey)
     const blockEntry = blockEntries.get(row) ?? false
     return (
       <div
         key={rowKey}
         className={css.row}
         data-kind={row.kind}
+        data-long={isLong ? 'true' : undefined}
         data-folded={isFolded ? 'true' : undefined}
         onClick={isLong ? () => {
-          setExpandedLines(prev => {
+          setFoldedLines(prev => {
             const next = new Set(prev)
             if (next.has(rowKey)) next.delete(rowKey)
             else next.add(rowKey)

@@ -57,14 +57,26 @@ if (typeof mod.apply !== 'function') throw new Error('missing apply')
 if (mod.inject?.includes('sidebarRightTabs') !== true) throw new Error('sidebarRightTabs must be declared')
 if (mod.inject?.includes('slots') !== true) throw new Error('slots must be declared')
 if (mod.inject?.includes('locale') !== true) throw new Error('locale must be declared')
+if (mod.inject?.includes('shortcuts') !== true) throw new Error('shortcuts must be declared')
+if (mod.inject?.includes('sidebarRight') !== true) throw new Error('sidebarRight must be declared')
 
 // Execute apply against a mock client context and assert the registrations.
-const registered = { tabs: [], panes: [], titles: [] }
+const registered = { tabs: [], panes: [], titles: [], shortcuts: [] }
+const opened = []
 const effects = []
 const ctx = {
   locale: { getSnapshot: () => ({ active: 'zh' }), subscribe: () => () => {} },
   sessions: { list: { subscribe: () => () => {}, getSnapshot: () => ({ byId: { s1: { cwd: 'D:/x' } } }) } },
-  sidebarRight: { openResource: () => {} },
+  sidebarRight: {
+    commandTarget: () => undefined,
+    openTabFromTarget: (kind, target) => { opened.push({ kind, target }) },
+  },
+  shortcuts: {
+    register(command) {
+      registered.shortcuts.push(command)
+      return () => {}
+    },
+  },
   sidebarRightTabs: {
     register(definition) {
       registered.tabs.push(definition)
@@ -90,13 +102,42 @@ const ctx = {
 }
 mod.apply(ctx)
 console.log('effects:', effects.join(' | '))
-if (effects.length !== 3) throw new Error(`expected 3 effects, got ${effects.length}`)
+if (effects.length !== 4) throw new Error(`expected 4 effects, got ${effects.length}`)
 if (registered.tabs.length !== 1) throw new Error(`expected 1 tab type, got ${registered.tabs.length}`)
 const def = registered.tabs[0]
 console.log('tab id:', def.id, '| kind:', def.kind, '| priority:', def.priority)
 console.log('title():', def.title(''))
 console.log('guide entries:', def.guide.length, '| guide title:', def.guide[0].title(), '| icon:', typeof def.guide[0].icon)
 if (def.guide[0].icon() === undefined) throw new Error('guide icon must render')
+
+// ── The global open/focus shortcut ─────────────────────────────────────────
+if (registered.shortcuts.length !== 1) throw new Error(`expected 1 shortcut command, got ${registered.shortcuts.length}`)
+const cmd = registered.shortcuts[0]
+console.log('shortcut id:', cmd.id, '| default (web:windows):', cmd.defaults['web:windows'].modifiers.join('+'), cmd.defaults['web:windows'].code)
+if (cmd.id !== def.guide[0].commandId) throw new Error('guide entry commandId must name the registered shortcut')
+for (const profile of ['web:macos', 'web:windows']) {
+  const binding = cmd.defaults[profile]
+  if (binding?.code !== 'KeyG' || binding?.modifiers?.join('+') !== 'primary+alt') {
+    throw new Error(`default binding for ${profile} must be primary+alt+G`)
+  }
+}
+// The registry validates every profile at registration and Linux's web
+// allowlist rejects primary+alt, so web:linux must stay undeclared.
+if (cmd.defaults['web:linux'] !== undefined) throw new Error('web:linux must stay undeclared (registration would throw)')
+const blocked = cmd.resolve({ target: undefined })
+if (blocked.status !== 'blocked' || typeof blocked.reason !== 'string' || blocked.reason === '') {
+  throw new Error('resolve must block with a localized reason when no target exists')
+}
+console.log('shortcut blocked reason:', blocked.reason)
+const marker = { marker: true }
+ctx.sidebarRight.commandTarget = () => marker
+const handled = cmd.resolve({ target: undefined })
+if (handled.status !== 'handled') throw new Error('resolve must handle a live target')
+handled.run()
+if (opened.length !== 1 || opened[0].kind !== 'git' || opened[0].target !== marker) {
+  throw new Error('the shortcut run() must open the git tab from the captured target')
+}
+console.log('shortcut opens git tab from captured target ✓')
 if (registered.panes.length !== 1) throw new Error('body slot not registered')
 const bodyReg = registered.panes[0]
 if (bodyReg.options.inject !== undefined) throw new Error('custom inject face must stay off the shared seat')
