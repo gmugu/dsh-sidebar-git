@@ -117,8 +117,11 @@ console.log('shortcut id:', cmd.id, '| default (web:windows):', cmd.defaults['we
 if (cmd.id !== def.guide[0].commandId) throw new Error('guide entry commandId must name the registered shortcut')
 for (const profile of ['web:macos', 'web:windows']) {
   const binding = cmd.defaults[profile]
-  if (binding?.code !== 'KeyG' || binding?.modifiers?.join('+') !== 'primary+alt') {
-    throw new Error(`default binding for ${profile} must be primary+alt+G`)
+  // rc.2's workspace claims KeyG+primary+alt for session.rename and register()
+  // throws on conflicting default bindings, so the default moved to KeyD
+  // (D for Diff; unused by every shipped default).
+  if (binding?.code !== 'KeyD' || binding?.modifiers?.join('+') !== 'primary+alt') {
+    throw new Error(`default binding for ${profile} must be primary+alt+D`)
   }
 }
 // The registry validates every profile at registration and Linux's web

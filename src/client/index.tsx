@@ -204,19 +204,28 @@ export function apply(ctx: ClientContextLike): void {
     const shortcuts = ctx.shortcuts
     const sidebarRight = ctx.sidebarRight
     if (shortcuts !== undefined && sidebarRight !== undefined) {
-      ctx.effect(() => shortcuts.register({
+      // Future-proofing: rc.2's register() throws on conflicting DEFAULT
+      // bindings, and shipped defaults may claim any key we pick in a later
+      // release. Register with the preferred defaults; if a future dsh
+      // claims them too, fall back to a defaults-less registration — the
+      // command stays (guide capsule, command palette, shortcut settings)
+      // and the worst case is "no default key", never a failed boot.
+      const command = {
         id: SHORTCUT_ID,
         label: () => t('git'),
         aliases: ['git', 'git panel'],
-        // Ctrl+Alt+G (⌘+Alt+G on macOS): the files panel owns primary+alt+P;
-        // 'primary' expands to Meta on macOS and Control elsewhere. Linux web
-        // is deliberately undeclared: register() validates every profile at
+        // Ctrl+Alt+D (⌘+Alt+D on macOS): the files panel owns primary+alt+P;
+        // 'primary' expands to Meta on macOS and Control elsewhere. rc.2's
+        // workspace claims KeyG+primary+alt for session.rename, so the
+        // 0.2.3-era KeyG default moved to KeyD (D for Diff; unused by every
+        // shipped default). Linux web is
+        // deliberately undeclared: register() validates every profile at
         // registration and Linux's web allowlist (Ctrl+/, Ctrl+Shift+,/.)
         // rejects primary+alt, so an absent profile is the shipped pattern
         // (files does the same); Linux users bind it in shortcut settings.
         defaults: {
-          'web:macos': { code: 'KeyG', modifiers: ['primary', 'alt'] },
-          'web:windows': { code: 'KeyG', modifiers: ['primary', 'alt'] },
+          'web:macos': { code: 'KeyD', modifiers: ['primary', 'alt'] },
+          'web:windows': { code: 'KeyD', modifiers: ['primary', 'alt'] },
         },
         regions: ['page', 'editable', 'terminal'],
         modals: [],
@@ -227,7 +236,17 @@ export function apply(ctx: ClientContextLike): void {
           }
           return { status: 'handled', run: () => { sidebarRight.openTabFromTarget('git', target) } }
         },
-      }), 'dsh-sidebar-git: git tab shortcut')
+      }
+      ctx.effect(() => {
+        try {
+          return shortcuts.register(command)
+        } catch (error) {
+          if (!/Conflicting shortcut defaults/.test(String(error))) throw error
+          console.warn('[dsh-sidebar-git] default shortcut keys are taken by a newer dsh command; registering without defaults:', error)
+          const { defaults: _omitted, ...withoutDefaults } = command
+          return shortcuts.register(withoutDefaults)
+        }
+      }, 'dsh-sidebar-git: git tab shortcut')
     } else {
       console.error('[dsh-sidebar-git] shortcuts or sidebarRight service is unavailable')
     }
@@ -236,15 +255,28 @@ export function apply(ctx: ClientContextLike): void {
     // `useStore`/`actions` — panel state then survives the body unmounting
     // whenever another tab is selected.
     const store = createGitStore()
-    ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    // Defense: a slots.inject callback may be deferred until some later
+    // activation flushes the slot declaration; a throw there would be charged
+    // to THAT plugin's fiber and abort the whole client boot. Guard each
+    // callback so a registration failure of ours can never cross the fiber
+    // boundary; it surfaces as a console error under our own label instead.
+    const guarded = (label: string, run: () => unknown) => (): unknown => {
+      try {
+        return run()
+      } catch (error) {
+        console.error(`[dsh-sidebar-git] deferred registration failed (${label}):`, error)
+        return undefined
+      }
+    }
+    ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', guarded('body', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab',
       key: TAB_ID,
       store,
-    }, GitTabBody)), 'dsh-sidebar-git: git tab body')
-    ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
+    }, GitTabBody))), 'dsh-sidebar-git: git tab body')
+    ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', guarded('title', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab.title',
       key: TAB_ID,
-    }, GitTabTitle)), 'dsh-sidebar-git: git tab title')
+    }, GitTabTitle))), 'dsh-sidebar-git: git tab title')
   } catch (error) {
     console.error('[dsh-sidebar-git] registration failed:', error)
   }
