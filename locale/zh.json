@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git 面板",
+    "description": "DSH 原生右侧边栏的独立 Git 面板标签页：状态、暂存、提交、切换分支、历史与共享 diff 窗格。严格本地操作——绝不 fetch/pull/push 远程。"
+  }
+}

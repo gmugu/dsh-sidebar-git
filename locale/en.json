@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git Panel",
+    "description": "Standalone Git panel tab for the DSH native right sidebar: status, staging, commit, branch switch, history and a shared diff pane. Strictly local — it never fetches, pulls or pushes."
+  }
+}

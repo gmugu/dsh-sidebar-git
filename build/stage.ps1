@@ -39,6 +39,11 @@ New-Item -ItemType Directory -Path $staged -Force | Out-Null
 Copy-Item (Join-Path $pkg 'package.json'), (Join-Path $pkg 'cordis.patch.yml') $staged -Force
 if (Test-Path "$staged\lib") { Remove-Item "$staged\lib" -Recurse -Force }
 Copy-Item (Join-Path $pkg 'lib') "$staged\lib" -Recurse -Force
+# Plugin-manager display meta (readPluginMeta resolves <pkg>/locale/*.json).
+if (Test-Path "$staged\locale") { Remove-Item "$staged\locale" -Recurse -Force }
+if (Test-Path (Join-Path $pkg 'locale')) {
+  Copy-Item (Join-Path $pkg 'locale') "$staged\locale" -Recurse -Force
+}
 # Every shipped doc (the package carries both language versions and its licence).
 foreach ($doc in 'README.md', 'README.zh.md', 'LICENSE') {
   $path = Join-Path $pkg $doc

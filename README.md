@@ -7,6 +7,19 @@ Standalone Git panel tab for the DSH native right sidebar — extracted from
 changes-tab Git lens (MIT, upstream sources included under `src/` with
 provenance notes; only the route prefix, glue, and locale subset are new).
 
+## Install
+
+Requires DSH `>=0.2.0-rc.2 <0.3.0` (declared as a peer dependency) and
+Node ≥ 20.
+
+- **DSH Web UI**: Plugins page → install a bundle, target
+  `https://github.com/gmugu/dsh-sidebar-git`.
+- **`plugin_manager` tool**: `install_bundle` with the same target.
+
+With HMR enabled the new bundle composes immediately; otherwise it loads on
+the next composition. Replacing an already-installed copy requires a dsh
+restart before the new client-module generation is served.
+
 ## What it provides
 
 - One native right-sidebar page tab (kind `git`, extension band) with a guide

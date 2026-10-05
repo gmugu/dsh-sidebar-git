@@ -7,12 +7,14 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
+    "./locale/*": "./locale/*",
     "./package.json": "./package.json"
   },
   "engines": {
     "node": ">=20"
   },
   "dsh": {
+    "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -27,6 +29,14 @@
     }
   },
   "license": "MIT",
+  "author": "gmugu",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "git",
+    "sidebar"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gmugu/dsh-sidebar-git.git"
@@ -35,6 +45,15 @@
   "bugs": {
     "url": "https://github.com/gmugu/dsh-sidebar-git/issues"
   },
+  "files": [
+    "lib",
+    "locale",
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "node build/build.js",
     "probe": "node build/probe/run.mjs"
@@ -44,6 +63,7 @@
     "esbuild": "^0.28.2"
   },
   "peerDependencies": {
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "@deepseek-ai/dsh": ">=0.2.0-rc.2 <0.3.0"
   }
 }

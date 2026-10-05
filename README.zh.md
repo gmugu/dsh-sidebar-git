@@ -7,6 +7,17 @@ DSH 原生右侧边栏里的独立 Git 面板标签页 —— 从
 「文件变动 → Git」视图提取而来（MIT；上游源码连同出处说明保留在 `src/` 下，
 新增的只有路由前缀、胶水代码与精简后的文案子集）。
 
+## 安装
+
+要求 DSH `>=0.2.0-rc.2 <0.3.0`（以 peer 依赖声明）与 Node ≥ 20。
+
+- **DSH Web 界面**：插件页 → 安装 bundle，目标填
+  `https://github.com/gmugu/dsh-sidebar-git`。
+- **`plugin_manager` 工具**：`install_bundle`，target 同上。
+
+开启 HMR 时新 bundle 立即生效；未开启则在下一次组合时加载。替换已安装的
+副本需要重启 dsh，新的客户端模块代际才会被加载。
+
 ## 提供什么
 
 - 一个原生右侧边栏的页面型标签页（kind 为 `git`，extension 档），带引导胶囊
