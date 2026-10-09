@@ -160,12 +160,18 @@ export function parseLogLines(output: string): GitLogEntry[] {
  *  `extraEnv` merges into the child environment (push uses it to disable
  *  credential prompting so a missing credential fails instead of hanging). */
 function runGit(cwd: string, args: string[], timeoutMs = 30_000, extraEnv?: Record<string, string>): Promise<string> {
-  const full = ['-C', cwd, '--no-pager', '-c', 'color.ui=false', ...args]
+  const full = ['-C', cwd, '--no-pager', '-c', 'color.ui=false',
+    // Raw UTF-8 filenames instead of `"b/\345\276\256…"` octal escapes — the
+    // CJK filenames the parsers and headers must show verbatim.
+    '-c', 'core.quotePath=false', ...args]
   return new Promise<string>((resolvePromise, reject) => {
     const child = spawn('git', full, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...extraEnv },
+      // LC_ALL=C pins git's own output language: the parsers key off English
+      // sentences (the "Binary files … differ" line, upstream hints) whose
+      // wording git otherwise localizes on non-English hosts.
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', ...extraEnv },
     })
     let stdout = ''
     let stderr = ''

@@ -36,9 +36,10 @@ function defaultExpandedFiles(files: readonly DiffFile[], startFolded: boolean):
   return only !== undefined && expandable(only) ? new Set([0]) : new Set()
 }
 
-/** The file header badge: added / deleted / renamed / binary ('' for a plain edit). */
+/** The file header's status badge: added / deleted / renamed (null for a
+ *  plain edit). Binary is a separate badge — a binary change still has a
+ *  status, and both belong on the header. */
 function fileTag(file: DiffFile): string | null {
-  if (file.binary) return t('diffBinary')
   if (file.oldPath === '/dev/null') return t('diffAdded')
   if (file.newPath === '/dev/null') return t('diffDeleted')
   const oldPath = displayPath(file.oldPath)
@@ -134,6 +135,7 @@ export function DiffFiles({ diff, untrackedPath, untrackedContent, startFolded =
           <span className={css.filePath}>{to}</span>
           {from !== to && <span className={css.fileOld}>← {from}</span>}
           {tag !== null && <span className={css.fileTag}>{tag}</span>}
+          {file.binary && <span className={css.fileTag}>{t('diffBinary')}</span>}
           {canExpand && (stats.added > 0 || stats.deleted > 0) && (
             <span className={css.fileStats}>
               {stats.added > 0 && <span className={css.statAdd}>+{String(stats.added)}</span>}

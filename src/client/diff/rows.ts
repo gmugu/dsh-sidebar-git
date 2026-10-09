@@ -274,6 +274,17 @@ export function parseUnifiedDiff(text: string): ParsedDiff {
     if (raw.startsWith('Binary files ') || raw === 'GIT binary patch') {
       flushHunk()
       current.binary = true
+      // A binary change has no ---/+++ lines, so the paths would stay empty
+      // and the header could show neither the name nor an add/delete state.
+      // git names both sides right here: "Binary files a/<old> and b/<new>
+      // differ" (a deletion puts /dev/null on the new side). A path with a
+      // literal " and " cannot be split reliably — git's own limitation on
+      // this line — and stays at the greedy split's mercy like everywhere.
+      const sides = /^Binary files (.+) and (.+) differ$/.exec(raw)
+      if (sides !== null) {
+        current.oldPath = sides[1]!
+        current.newPath = sides[2]!
+      }
       continue
     }
     if (raw.startsWith('--- ')) {
@@ -423,11 +434,50 @@ export function foldRowsFromContents(fold: FoldSegment, oldContent: string, newC
   return rows
 }
 
-/** Strip the `a/` / `b/` prefix git puts on diff paths (not on /dev/null). */
+/** Decode a git-quoted path body: `\nnn` octal escapes are UTF-8 bytes (a
+ *  CJK char is a 3-byte run, so byte-at-a-time String.fromCharCode would
+ *  mojibake), assembled and decoded as one UTF-8 sequence. */
+function unquoteGitPath(quoted: string): string {
+  const body = quoted.slice(1, -1)
+  const bytes: number[] = []
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i]!
+    if (ch !== '\\') {
+      const code = ch.charCodeAt(0)
+      if (code >= 128) return quoted // already-decoded text mixed in: leave as-is
+      bytes.push(code)
+      continue
+    }
+    const octal = /^[0-7]{3}/.exec(body.slice(i + 1))
+    if (octal !== null) {
+      bytes.push(parseInt(octal[0], 8))
+      i += 3
+    } else if (body[i + 1] !== undefined) {
+      bytes.push(body[i + 1]!.charCodeAt(0))
+      i += 1
+    } else {
+      return quoted // dangling backslash: not git quoting after all
+    }
+  }
+  try {
+    return new TextDecoder('utf-8').decode(new Uint8Array(bytes))
+  } catch {
+    return quoted
+  }
+}
+
+/** Strip the `a/` / `b/` prefix git puts on diff paths (not on /dev/null).
+ *  A git-quoted path (`"b/\345\276\256…"` — octal-escaped non-ASCII, what
+ *  git's default core.quotePath emits) is unquoted and UTF-8-decoded first;
+ *  the host now pins `core.quotePath=false`, so this is belt-and-braces for
+ *  diffs that predate the pin or arrive from another producer. */
 export function displayPath(path: string): string {
-  if (path === '/dev/null') return path
-  if (path.startsWith('a/') || path.startsWith('b/')) return path.slice(2)
-  return path
+  const value = path.startsWith('"') && path.endsWith('"') && path.length >= 2
+    ? unquoteGitPath(path)
+    : path
+  if (value === '/dev/null') return value
+  if (value.startsWith('a/') || value.startsWith('b/')) return value.slice(2)
+  return value
 }
 
 /** The diff's add/del/mod row counts (the "+n −m" header chips). */
