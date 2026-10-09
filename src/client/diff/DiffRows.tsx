@@ -161,6 +161,10 @@ export function DiffRows({ segments, lang, resolveFold }: DiffRowsProps) {
         key={rowKey}
         className={css.row}
         data-kind={row.kind}
+        // A mod pair's sides keep their del/add lineage in the line-number
+        // fields (old side: oldLine only; new side: newLine only), so the
+        // traditional -, + signs and the DSH diff-row tints can split by side.
+        data-side={row.kind === 'mod' ? (row.newLine !== undefined ? 'new' : 'old') : undefined}
         data-long={isLong ? 'true' : undefined}
         data-folded={isFolded ? 'true' : undefined}
         onClick={isLong ? () => {
@@ -175,7 +179,7 @@ export function DiffRows({ segments, lang, resolveFold }: DiffRowsProps) {
       >
         <span className={css.lineNo}>{row.oldLine !== undefined ? String(row.oldLine) : ''}</span>
         <span className={css.lineNo}>{row.newLine !== undefined ? String(row.newLine) : ''}</span>
-        <span className={css.sign}>{row.kind === 'del' ? '-' : row.kind === 'add' ? '+' : row.kind === 'mod' ? '~' : ' '}</span>
+        <span className={css.sign}>{row.kind === 'del' || (row.kind === 'mod' && row.newLine === undefined) ? '-' : row.kind === 'add' || row.kind === 'mod' ? '+' : ' '}</span>
         <span className={css.text} data-folded={isFolded ? 'true' : undefined}>
           {row.kind === 'mod' && (() => {
             const inline = inlineMap.get(row)

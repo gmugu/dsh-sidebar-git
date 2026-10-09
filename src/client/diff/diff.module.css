@@ -1,10 +1,14 @@
-/* The shared diff renderer (DiffRows / DiffFiles): one visual language for
+/* The shared diff renderer (DiffFiles / DiffRows): one visual language for
    every file-change surface — the changes tab's preview pane, the diff tab,
-   session-op diffs and git diffs alike. Semantic --dsw-alias tokens only
-   (skin contract); the syntax-token hues derive from the alias state tokens
-   via color-mix so they sit BETWEEN the diff colors (violet keywords, teal
-   strings, brand-tinted types, warn-family numbers/functions, magenta
-   macros) instead of colliding with red del / green add / blue mod. */
+   session-op diffs and git diffs alike. Row tints, gutter bars, signs and
+   text follow the DSH diff panel's own palette (--dsw-alias-file-diff-*,
+   the tokens dsh-client-ui-deliverables' review diff renders with): full
+   background wash, neutral label-secondary text, marker-colored +/-, and a
+   3px side gutter bar. A rewritten (mod) pair's old side wears the deleted
+   palette and its new side the added one; the syntax-token hues still derive
+   from the alias state tokens via color-mix so they sit BETWEEN the diff
+   colors (violet keywords, teal strings, brand-tinted types, warn-family
+   numbers/functions, magenta macros). */
 
 .rows { padding: 4px 0 8px; font-family: var(--ds-font-family-code, monospace); font-size: 11px; }
 .row { display: flex; align-items: flex-start; gap: 5px; padding: 0 10px; line-height: 18px; cursor: default; }
@@ -12,26 +16,25 @@
 .lineNo { flex: none; width: 2.5em; color: var(--dsw-alias-label-tertiary); text-align: right; user-select: none; font-size: 10px; }
 .sign { flex: none; width: 1em; text-align: center; user-select: none; font-weight: 700; }
 
-.row[data-kind='del'] .sign, .row[data-kind='del'] .text { color: var(--dsw-alias-state-error-primary); }
-.row[data-kind='add'] .sign, .row[data-kind='add'] .text { color: var(--dsw-alias-state-success-primary); }
-.row[data-kind='mod'] .sign, .row[data-kind='mod'] .text { color: var(--dsw-alias-state-business-primary); }
-.row[data-kind='context'] .sign, .row[data-kind='context'] .text { color: var(--dsw-alias-label-secondary); }
+.row[data-kind='del'], .row[data-kind='mod'][data-side='old'] { background: var(--dsw-alias-file-diff-deleted-bg); box-shadow: inset 3px 0 0 var(--dsw-alias-file-diff-deleted-marker); }
+.row[data-kind='add'], .row[data-kind='mod'][data-side='new'] { background: var(--dsw-alias-file-diff-added-bg); box-shadow: inset 3px 0 0 var(--dsw-alias-file-diff-added-marker); }
+.row[data-kind='del'] .sign, .row[data-kind='mod'][data-side='old'] .sign { color: var(--dsw-alias-file-diff-deleted-marker); }
+.row[data-kind='add'] .sign, .row[data-kind='mod'][data-side='new'] .sign { color: var(--dsw-alias-file-diff-added-marker); }
+.row .text { color: var(--dsw-alias-label-secondary); }
+.row[data-kind='context'] .sign { color: var(--dsw-alias-label-secondary); }
 .row[data-kind='read'] .text { color: var(--dsw-alias-label-primary); }
 
-/* Faint row tints under changed lines (GitHub-style, lighter than the text
-   hue so the syntax colors stay readable on top). */
-.row[data-kind='del'] { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent); }
-.row[data-kind='add'] { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 8%, transparent); }
-.row[data-kind='mod'] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent); }
+/* Intra-line changed substring inside a rewritten (mod) line: tinted by its
+   own side's marker so the highlight reads as part of that row's palette. */
+.row[data-kind='mod'][data-side='old'] .inlineChange { background: color-mix(in srgb, var(--dsw-alias-file-diff-deleted-marker) 24%, transparent); }
+.row[data-kind='mod'][data-side='new'] .inlineChange { background: color-mix(in srgb, var(--dsw-alias-file-diff-added-marker) 24%, transparent); }
+.inlineChange { border-radius: 3px; padding: 0 1px; }
 
 .row .text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
 .row[data-folded='true'] .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* The `\ No newline at end of file` marker row attached to a hunk's tail. */
 .row[data-kind='meta'] .metaText { color: var(--dsw-alias-label-tertiary); font-style: italic; }
-
-/* Intra-line changed substring inside a rewritten (mod) line. */
-.inlineChange { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 26%, transparent); border-radius: 3px; padding: 0 1px; }
 
 /* Syntax-token colors: alias-token mixes between the diff hues. */
 .tokComment { color: var(--dsw-alias-label-tertiary); font-style: italic; }
