@@ -22,7 +22,9 @@
 import { useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import { IconBranchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionScope } from './api.ts'
+import { fileAddressFor } from './file-address.ts'
 import { attachLocale, t } from './locales.ts'
+import { resolveSidebarPath } from './sidebar-path.ts'
 import { GitPanel } from './GitPanel.tsx'
 import { GitDiffPane } from './GitDiffPane.tsx'
 import { createGitStore, type GitStoreActions, type GitStoreState, type GitUseStore } from './store.ts'
@@ -123,6 +125,19 @@ function GitTabBody(props: GitTabBodyProps): ReactNode {
   const scope = useMemo((): SessionScope => ({ sessionId, cwd }), [sessionId, cwd])
   const preview = useStore((state: GitStoreState) => state.preview)
   const paneHeight = useStore((state: GitStoreState) => state.paneHeight)
+  // The preview pane's "open original file" action: mint the changed file's
+  // dsh-resource address in this tab's session and let the Sidebar's file
+  // provider open it (the shipped files panel's own row-click pattern). Only a
+  // worktree target has a live file to open; the tab-actions face is expected
+  // on every seat but guarded anyway — without it the button simply does not
+  // render.
+  const openOriginal =
+    preview !== null && preview.kind === 'worktree' && typeof info.tab.actions?.openResource === 'function'
+      ? () => {
+          const absolute = resolveSidebarPath(preview.repoRoot ?? preview.worktree ?? cwd, preview.path)
+          info.tab.actions.openResource(fileAddressFor(sessionId, cwd, absolute))
+        }
+      : undefined
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -140,6 +155,7 @@ function GitTabBody(props: GitTabBodyProps): ReactNode {
           scope={scope}
           height={paneHeight}
           onHeightCommit={(height) => { actions.setPaneHeight(height) }}
+          onOpenOriginal={openOriginal}
           onClose={() => { actions.setPreview(null) }}
         />
       )}

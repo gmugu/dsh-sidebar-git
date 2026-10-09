@@ -9,7 +9,7 @@
  * readers, redaction) is deliberately not carried over.
  */
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { IconCloseOutlineRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineRegular, IconInspectOutlineRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionScope } from './api.ts'
 import { api } from './api.ts'
 import { t } from './locales.ts'
@@ -46,10 +46,14 @@ export interface GitDiffPaneProps {
    *  dragged (it then takes half of the panel). */
   height: number | null
   onHeightCommit: (height: number) => void
+  /** Open the changed file's live worktree contents in the Sidebar's file
+   *  resource tab; absent when the caller cannot open one (commit targets,
+   *  no tab actions face). */
+  onOpenOriginal?: () => void
   onClose: () => void
 }
 
-export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: GitDiffPaneProps) {
+export function GitDiffPane({ target, scope, height, onHeightCommit, onOpenOriginal, onClose }: GitDiffPaneProps) {
   // ── Git target loading (mirrors the upstream diff tab: staged-side
   //    fallback, the untracked full-addition fallback, refresh by tick).
   //    Every visited target is fetched fresh: for an untracked file that is one
@@ -270,6 +274,16 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
 
   const title = gitRef.kind === 'worktree' ? gitRef.path : `${gitRef.hash} ${gitRef.subject}`
   const stats = gitStats
+  // The "open original file" button targets the live worktree path, so a commit
+  // target never shows it — and neither does a deletion, whose worktree file no
+  // longer exists (the file tab would only render its own load error). The
+  // deletion read needs the loaded patch; until it arrives the button shows and
+  // a click lands on the file tab's error state.
+  const worktreeFileDeleted =
+    gitRef.kind === 'worktree' &&
+    parsedPatch !== null &&
+    parsedPatch.files.length > 0 &&
+    parsedPatch.files.every((file) => file.newPath === '/dev/null')
 
   return (
     <div ref={paneRef} className={css.diffPane} style={{ height: paneHeight ?? '50%' }}>
@@ -298,6 +312,22 @@ export function GitDiffPane({ target, scope, height, onHeightCommit, onClose }: 
             {stats.added > 0 && <span className={diffCss.statAdd}>+{String(stats.added)}</span>}
             {stats.deleted > 0 && <span className={diffCss.statDel}>−{String(stats.deleted)}</span>}
           </span>
+        )}
+        {onOpenOriginal !== undefined && !worktreeFileDeleted && (
+          <button
+            type="button"
+            className={css.iconButton}
+            aria-label={t('changesOpenOriginal')}
+            title={t('changesOpenOriginal')}
+            onClick={onOpenOriginal}
+          >
+            {/* Same glyph and label as the official changes-review diff header
+                (dsh-client-ui-deliverables), whose action this mirrors. Its
+                default 12px box reads small next to the 14px refresh/close
+                glyphs, and the brackets only ink the middle half of the canvas
+                (y 4.25–11.75 of 16) — size it so their visual height matches. */}
+            <IconInspectOutlineRegular size={18} />
+          </button>
         )}
         <button
           type="button"
