@@ -173,6 +173,9 @@ export function GitPanel(props: GitPanelProps) {
   /** The panel's one error banner: commit, checkout, stage/unstage, discard and
    *  the history pager all report through it (there is no per-row error line). */
   const [actionError, setActionError] = useState<string | null>(null)
+  /** The last successful push's porcelain summary (one line), shown where the
+   *  error line lives; cleared by the next action. */
+  const [pushedSummary, setPushedSummary] = useState<string | null>(null)
   const [logLoadingMore, setLogLoadingMore] = useState(false)
 
   /** The open history-row context menu. */
@@ -474,12 +477,31 @@ export function GitPanel(props: GitPanelProps) {
     if (message === '' || busy) return
     setBusy(true)
     setActionError(null)
+    setPushedSummary(null)
     try {
       await api.gitCommit(gitScope, message, selectedWorktree)
       actions.setCommitMsg('')
       await refresh()
     } catch (reason) {
       setActionError(errorMessage(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Push the current branch to its upstream (first push auto-sets
+   *  `origin/<branch>`); the porcelain per-ref summary shows where it landed. */
+  const push = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    setActionError(null)
+    setPushedSummary(null)
+    try {
+      const { pushed } = await api.gitPush(gitScope, selectedWorktree)
+      setPushedSummary(pushed.split('\n').find(line => line.trim() !== '')?.trim() ?? '')
+      await refresh()
+    } catch (reason) {
+      setActionError(`${t('pushError')}: ${errorMessage(reason)}`)
     } finally {
       setBusy(false)
     }
@@ -692,8 +714,20 @@ export function GitPanel(props: GitPanelProps) {
             >
               {t('commit')}
             </button>
+            <button
+              type="button"
+              className={css.gitCommitButton}
+              disabled={busy}
+              title={t('push')}
+              onClick={() => { void push() }}
+            >
+              {t('push')}
+            </button>
           </div>
           {actionError !== null && <div className={css.gitError}>{actionError}</div>}
+          {actionError === null && pushedSummary !== null && (
+            <div className={css.gitEmpty}>{t('pushSuccess', { summary: pushedSummary })}</div>
+          )}
 
           <div className={css.gitSection}>
             <div className={css.gitSectionHeader}><span>{t('history')}</span></div>

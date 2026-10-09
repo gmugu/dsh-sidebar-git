@@ -156,14 +156,16 @@ export function parseLogLines(output: string): GitLogEntry[] {
   return rows
 }
 
-/** Run one git command; resolves with stdout, rejects with GitCommandError. */
-function runGit(cwd: string, args: string[], timeoutMs = 30_000): Promise<string> {
+/** Run one git command; resolves with stdout, rejects with GitCommandError.
+ *  `extraEnv` merges into the child environment (push uses it to disable
+ *  credential prompting so a missing credential fails instead of hanging). */
+function runGit(cwd: string, args: string[], timeoutMs = 30_000, extraEnv?: Record<string, string>): Promise<string> {
   const full = ['-C', cwd, '--no-pager', '-c', 'color.ui=false', ...args]
   return new Promise<string>((resolvePromise, reject) => {
     const child = spawn('git', full, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...extraEnv },
     })
     let stdout = ''
     let stderr = ''
@@ -400,6 +402,31 @@ export async function unstage(cwd: string, path: string | undefined, selected?: 
 /** Commit the staged changes with a message (global identity untouched). */
 export async function commit(cwd: string, message: string, selected?: string): Promise<void> {
   await runGit(await repoRoot(cwd, selected), ['commit', '-m', message])
+}
+
+/** `git push --porcelain` output, one `<result>\t<refs>` line per pushed ref
+ *  (the summary the panel shows), rejected as GitCommandError on failure. */
+const PUSH_TIMEOUT_MS = 120_000
+/** Error fragments git emits when the branch has no upstream yet — the first
+ *  push of a new branch; retried once with `--set-upstream`. */
+const NO_UPSTREAM = /no upstream|set-upstream|has no upstream branch/i
+
+export async function push(cwd: string, selected?: string): Promise<string> {
+  const root = await repoRoot(cwd, selected)
+  // A detached HEAD has no branch to push by name; say so before git does.
+  const branch = await currentBranch(root)
+  if (branch === 'HEAD') {
+    throw new GitCommandError('cannot push: HEAD is detached (no current branch)', 'git-error', 'push')
+  }
+  const env = { GIT_TERMINAL_PROMPT: '0' }
+  try {
+    return await runGit(root, ['push', '--porcelain'], PUSH_TIMEOUT_MS, env)
+  } catch (first) {
+    const message = first instanceof Error ? first.message : String(first)
+    if (!NO_UPSTREAM.test(message)) throw first
+    // First push of a new branch: publish it and set its upstream in one go.
+    return runGit(root, ['push', '--porcelain', '--set-upstream', 'origin', branch], PUSH_TIMEOUT_MS, env)
+  }
 }
 
 /** Branch names (current first). */

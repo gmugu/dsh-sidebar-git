@@ -134,6 +134,10 @@ export const api = {
     call<{ ok: true }>('git.unstage', gitPayload(scope, worktree, { ...(path !== undefined ? { path } : {}) })),
   gitCommit: (scope: SessionScope, message: string, worktree?: string) =>
     call<{ ok: true }>('git.commit', gitPayload(scope, worktree, { message })),
+  /** Push the current branch to its upstream; resolves with the porcelain
+   *  per-ref result text (the panel shows its first line). */
+  gitPush: (scope: SessionScope, worktree?: string) =>
+    call<{ pushed: string }>('git.push', gitPayload(scope, worktree, {})),
   gitBranch: (scope: SessionScope, worktree?: string, signal?: AbortSignal) =>
     call<{ current: string; names: string[] }>('git.branch', gitPayload(scope, worktree, {}), signal),
   gitCheckout: (scope: SessionScope, branch: string, worktree?: string) =>

@@ -196,6 +196,10 @@ function buildApi(ctx) {
       await git.commit(cwd, message, selectedRepoOf(payload))
       return { ok: true }
     },
+    'git.push': async (payload) => {
+      const { cwd } = await gitCwdOf(payload)
+      return { pushed: await git.push(cwd, selectedRepoOf(payload)) }
+    },
     'git.branch': async (payload) => {
       const { cwd } = await gitCwdOf(payload)
       return git.branches(cwd, selectedRepoOf(payload))
