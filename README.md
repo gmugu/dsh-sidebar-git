@@ -51,7 +51,9 @@ restart before the new client-module generation is served.
   `size` and a `truncated` flag). Every command runs with `-C` on the
   session's working directory; optional worktree/repo targets are validated
   against the authoritative registry. Requests pass the same loopback/Origin
-  trust fence as the `/api` gateway.
+  trust fence as the `/api` gateway: the connection service's own
+  `isTrusted()` (its configured `trustedHosts` row is the single source of
+  truth; the copied fence is only the fallback).
 
 ## Layout
 
@@ -74,18 +76,16 @@ each other:
 node build/build.js                                # rebuild lib/ (runs the export audit)
 node build/dry-run.mjs                             # exported face + registrations + guard-facade + route/locale parity
 node build/probe/run.mjs                           # host discard + fs.read routes + diff-document model
-# stage the built package into the DSH profile (pnpm cannot junction across drives):
-powershell -File build/stage.ps1
 ```
 
-Deployment is a **staging copy**, not a reinstall: the profile resolves this
-package through a junction to `<dsh home>/profiles/<profile>/local/<package>`
-(on Windows `build/stage.ps1` holds those two paths and copies `package.json` /
-`cordis.patch.yml` / `lib/` / the READMEs there). The workspace copy is the
-source of truth, so a **client** change needs a page refresh and a **host**
-change (`src/host/`) needs a dsh restart. `plugin_manager install_bundle`
-reports `ambiguous-install` once the dependency is a `link:` to that same
-directory (pnpm sees no dependency change) — staging is the working path.
+Deployment is **in place**: this repository lives directly at
+`<dsh home>/profiles/<profile>/local/dsh-sidebar-git`, resolved by the profile
+through a `link:` dependency plus a `node_modules` junction — a successful
+build is already deployed. A **client** change needs a page refresh and a
+**host** change (`src/host/`) needs a dsh restart. (Historical note: the
+source used to live on another drive and was synced as a staging copy by
+`build/stage.ps1`; that script was removed when the repository moved into the
+profile.)
 
 ## Panel state lives in the registration's store
 

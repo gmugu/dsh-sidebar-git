@@ -43,7 +43,7 @@ export async function run() {
     let route
     apply({
       sessions: { get: () => ({ header: { cwd: dir } }) },
-      webRuntime: { trustedHosts: [] },
+      connection: { trustedHosts: [] },
       webServer: { register: (value) => { route = value; return () => {} } },
       effect: (fn) => fn(),
     })

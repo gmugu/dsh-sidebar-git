@@ -64,17 +64,13 @@ DSH 原生右侧边栏里的独立 Git 面板标签页 —— 从
 node build/build.js                                # 重新构建 lib/（同时跑导出审计）
 node build/dry-run.mjs                             # 导出面 + 注册 + 守卫门面 + 路由/文案键一致性
 node build/probe/run.mjs                           # host 的 discard / fs.read 路由与差异文档模型
-# 把构建产物同步进 DSH profile（pnpm 无法跨盘 junction）：
-powershell -File build/stage.ps1
 ```
 
-部署靠的是**同步 staging 副本**，不是重装：profile 通过 junction 指向
-`<dsh 主目录>/profiles/<profile>/local/<包名>`（Windows 下这两个路径写在
-`build/stage.ps1` 顶部，脚本会把 `package.json` / `cordis.patch.yml` / `lib/`
-与两份 README 复制过去）。**工作区才是真源**，因此**客户端**改动刷新页面即可，
-**host**（`src/host/`）改动需要重启 dsh。当依赖是指向同一目录的 `link:` 时，
-`plugin_manager install_bundle` 会报 `ambiguous-install`（pnpm 看不到依赖变化）
-—— 可用路径是同步 staging。
+部署是**就地的**：本仓库直接位于
+`<dsh 主目录>/profiles/<profile>/local/dsh-sidebar-git`，profile 以 `link:` 依赖
++ junction 指向此处，构建成功即已部署。**客户端**改动刷新页面即可，**host**
+（`src/host/`）改动需要重启 dsh。（历史注记：源码曾位于另一块盘、靠
+`build/stage.ps1` 同步 staging 副本；仓库迁入 profile 后该脚本已删除。）
 
 ## 面板状态放在注册声明的 store 里
 
