@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { t } from '../locales.ts'
-import { coalesceInline, diffInline, MIN_FOLD, type DiffRow, type DiffSegment, type FoldSegment, type InlineDiff } from './rows.ts'
+import { coalesceInline, MIN_FOLD, modInlineDiffs, type DiffRow, type DiffSegment, type FoldSegment } from './rows.ts'
 import { hasBlockComment, isColored, scanLine, type CodeToken, type TokenType } from './highlight.ts'
 import css from './diff.module.css'
 
@@ -48,37 +48,6 @@ function tokensToNodes(tokens: readonly CodeToken[], changed = false): ReactNode
     else nodes.push(<span key={String(nodes.length)} className={tokenSpanClass(token.type, changed)}>{token.text}</span>)
   }
   return nodes
-}
-
-/**
- * Intra-line diffs for mod-row pairs, keyed by row identity: each mod-run's
- * first half (old side) pairs with its second half (new side), each pair
- * diffed by common prefix/suffix so both sides highlight the exact changed
- * substring.
- */
-function buildInlineMap(segments: readonly DiffSegment[]): Map<DiffRow, InlineDiff> {
-  const map = new Map<DiffRow, InlineDiff>()
-  for (const segment of segments) {
-    if (segment.kind !== 'hunk') continue
-    const rows = segment.rows
-    let i = 0
-    while (i < rows.length) {
-      if (rows[i]!.kind !== 'mod') { i += 1; continue }
-      let j = i
-      while (j < rows.length && rows[j]!.kind === 'mod') j += 1
-      const block = rows.slice(i, j)
-      const half = Math.floor(block.length / 2)
-      for (let p = 0; p < half; p += 1) {
-        const delRow = block[p]!
-        const addRow = block[p + half]!
-        const inline = diffInline(delRow.text, addRow.text)
-        map.set(delRow, inline)
-        map.set(addRow, inline)
-      }
-      i = j
-    }
-  }
-  return map
 }
 
 /**
@@ -141,7 +110,7 @@ export function DiffRows({ segments, lang, resolveFold }: DiffRowsProps) {
     foldEpoch.current += 1
   }, [segments])
 
-  const inlineMap = useMemo(() => buildInlineMap(segments), [segments])
+  const inlineMap = useMemo(() => modInlineDiffs(segments), [segments])
   const blockEntries = useMemo(() => diffBlockEntries(segments, lang), [segments, lang])
 
   /** One diff row: colored sign + syntax-colored text, long-line fold toggle. */

@@ -18,28 +18,109 @@ export interface DiffRow {
   readonly newLine?: number
   /** The line's text without its terminator. */
   readonly text: string
+  /** Rewrite-pair identity: both rows of a 'mod' pair carry the same id, so
+   *  their intra-line diffs pair by identity instead of by row order (content
+   *  matching can pair a deletion with an addition that sits further down the
+   *  run). Ids are unique within the producer call that minted them. */
+  readonly pair?: number
+}
+
+/** Common leading and trailing characters of two lines — the edges a rewrite
+ *  highlight leaves unmarked. */
+function commonEdges(oldText: string, newText: string): { prefix: number; suffix: number } {
+  const minLen = Math.min(oldText.length, newText.length)
+  let prefix = 0
+  while (prefix < minLen && oldText[prefix] === newText[prefix]) prefix += 1
+  let suffix = 0
+  while (suffix < minLen - prefix && oldText[oldText.length - 1 - suffix] === newText[newText.length - 1 - suffix]) suffix += 1
+  return { prefix, suffix }
+}
+
+/** Share of the longer line that two rows have in common (0..1): the part
+ *  `diffInline` would leave unmarked. */
+function sharedRatio(oldText: string, newText: string): number {
+  const maxLen = Math.max(oldText.length, newText.length)
+  if (maxLen === 0) return 1
+  const { prefix, suffix } = commonEdges(oldText, newText)
+  return (prefix + suffix) / maxLen
+}
+
+/** Minimum common share for two rows to be drawn as a rewrite pair. Below it
+ *  the highlight would mark nearly the whole line, claiming a rewrite that is
+ *  not there (e.g. a deleted list entry paired with an unrelated added one);
+ *  such rows stay a pure deletion and a pure addition instead. */
+const MOD_PAIR_MIN_SHARED = 0.5
+
+/** Candidate comparisons per run pair before falling back to positional
+ *  matching, so a huge replaced block cannot cost runA × runB line scans. */
+const MOD_PAIR_SCAN_LIMIT = 4096
+
+/** One content match inside a del/add run pair: indexes into both runs. */
+type RowMatch = [del: number, add: number]
+
+/**
+ * Content matching inside one del-run/add-run block: greedily take the most
+ * similar pairs that clear {@link MOD_PAIR_MIN_SHARED}, each row used once.
+ * Ties prefer the pair closest to the old positional alignment, so repeated
+ * identical lines (a brace, a blank row) keep their natural order. A block too
+ * large to score exhaustively falls back to positional candidates under the
+ * same threshold.
+ */
+function matchRows(dels: readonly DiffRow[], adds: readonly DiffRow[]): RowMatch[] {
+  const matched: RowMatch[] = []
+  if (dels.length === 0 || adds.length === 0) return matched
+  if (dels.length * adds.length > MOD_PAIR_SCAN_LIMIT) {
+    for (let i = 0; i < Math.min(dels.length, adds.length); i += 1) {
+      if (sharedRatio(dels[i]!.text, adds[i]!.text) >= MOD_PAIR_MIN_SHARED) matched.push([i, i])
+    }
+    return matched
+  }
+  const candidates: Array<{ del: number; add: number; score: number; distance: number }> = []
+  for (let del = 0; del < dels.length; del += 1) {
+    for (let add = 0; add < adds.length; add += 1) {
+      const score = sharedRatio(dels[del]!.text, adds[add]!.text)
+      if (score < MOD_PAIR_MIN_SHARED) continue
+      candidates.push({ del, add, score, distance: Math.abs(del - add) })
+    }
+  }
+  candidates.sort((left, right) =>
+    right.score - left.score || left.distance - right.distance || left.del - right.del || left.add - right.add)
+  const usedDel = new Set<number>()
+  const usedAdd = new Set<number>()
+  for (const candidate of candidates) {
+    if (usedDel.has(candidate.del) || usedAdd.has(candidate.add)) continue
+    usedDel.add(candidate.del)
+    usedAdd.add(candidate.add)
+    matched.push([candidate.del, candidate.add])
+  }
+  return matched
 }
 
 /**
- * Pair each del-run with the add-run that follows it: the overlapping
- * `min(len)` rows on both sides become 'mod' so rewrites tint distinctly and
- * receive intra-line highlighting. Pure — returns a new array when anything
- * changed. Shared by the LCS walk and the unified-diff converter so git
- * hunks rewrite-pair exactly like session ops do.
+ * Pair each del-run with the add-run that follows it, matching rows by their
+ * text: pairs that share enough of the line become 'mod' (rewrite tint plus an
+ * intra-line highlight) and carry a shared pair id; unmatched rows stay pure
+ * deletions/additions. Pairing by content rather than by position is what lets
+ * a renumbered list pair "7. barrier" with "1. barrier" (highlighting only the
+ * number) instead of pairing it with whatever sits at the same index. Pure —
+ * returns a new array when anything changed. Shared by the LCS walk and the
+ * unified-diff converter so git hunks rewrite-pair exactly like session ops.
  */
 export function pairMods(rows: readonly DiffRow[]): DiffRow[] {
   const out = rows.slice()
   let k = 0
+  let nextPair = 0
   while (k < out.length) {
     if (out[k]!.kind !== 'del') { k += 1; continue }
     const delStart = k
     while (k < out.length && out[k]!.kind === 'del') k += 1
     const addStart = k
     while (k < out.length && out[k]!.kind === 'add') k += 1
-    const pairs = Math.min(addStart - delStart, k - addStart)
-    for (let p = 0; p < pairs; p += 1) {
-      out[delStart + p] = { ...out[delStart + p]!, kind: 'mod' }
-      out[addStart + p] = { ...out[addStart + p]!, kind: 'mod' }
+    const matches = matchRows(out.slice(delStart, addStart), out.slice(addStart, k))
+    for (const [delIndex, addIndex] of matches) {
+      out[delStart + delIndex] = { ...out[delStart + delIndex]!, kind: 'mod', pair: nextPair }
+      out[addStart + addIndex] = { ...out[addStart + addIndex]!, kind: 'mod', pair: nextPair }
+      nextPair += 1
     }
   }
   return out
@@ -158,11 +239,7 @@ export interface InlineDiff { readonly old: readonly InlineSegment[]; readonly n
  * @returns per-side segments marking changed runs.
  */
 export function diffInline(oldText: string, newText: string): InlineDiff {
-  const minLen = Math.min(oldText.length, newText.length)
-  let prefix = 0
-  while (prefix < minLen && oldText[prefix] === newText[prefix]) prefix += 1
-  let suffix = 0
-  while (suffix < minLen - prefix && oldText[oldText.length - 1 - suffix] === newText[newText.length - 1 - suffix]) suffix += 1
+  const { prefix, suffix } = commonEdges(oldText, newText)
   const oldMidStart = prefix
   const oldMidEnd = oldText.length - suffix
   const newMidStart = prefix
@@ -192,6 +269,38 @@ export function coalesceInline(segments: readonly InlineSegment[]): InlineSegmen
     else out.push(seg)
   }
   return out
+}
+
+/**
+ * Intra-line diffs for every rewrite-paired row, both sides of each pair keyed
+ * to the same {@link InlineDiff}. Pairs are joined by their {@link DiffRow.pair}
+ * id — content matching can pair a deletion with an addition that sits further
+ * down the run, so pairing by row order or by halves of a contiguous mod block
+ * would diff the wrong lines. Mod rows without an id (or without a partner)
+ * stay out of the map and render verbatim.
+ * @param segments - the rendered hunks and folds.
+ * @returns mod row -> its paired intra-line diff.
+ */
+export function modInlineDiffs(segments: readonly DiffSegment[]): Map<DiffRow, InlineDiff> {
+  const map = new Map<DiffRow, InlineDiff>()
+  for (const segment of segments) {
+    if (segment.kind !== 'hunk') continue
+    const oldRows = new Map<number, DiffRow>()
+    const newRows = new Map<number, DiffRow>()
+    for (const row of segment.rows) {
+      if (row.kind !== 'mod' || row.pair === undefined) continue
+      const target = row.oldLine !== undefined ? oldRows : newRows
+      target.set(row.pair, row)
+    }
+    for (const [id, delRow] of oldRows) {
+      const addRow = newRows.get(id)
+      if (addRow === undefined) continue
+      const inline = diffInline(delRow.text, addRow.text)
+      map.set(delRow, inline)
+      map.set(addRow, inline)
+    }
+  }
+  return map
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -480,15 +589,23 @@ export function displayPath(path: string): string {
   return value
 }
 
-/** The diff's add/del/mod row counts (the "+n −m" header chips). */
+/**
+ * The diff's added/deleted line counts (the "+n −m" header chips), matching
+ * git's own numstat: each line is counted once, on the side it belongs to.
+ * Counting by the rendered row's kind would count a rewrite pair twice per
+ * side — a paired rewrite is two rows (one old-side, one new-side), each
+ * carrying only its own line number — so the pairs inflate both totals
+ * (e.g. a 14-addition/29-deletion patch read as +28/−43).
+ */
 export function diffStats(segments: readonly DiffSegment[]): { added: number; deleted: number } {
   let added = 0
   let deleted = 0
   for (const segment of segments) {
     if (segment.kind !== 'hunk') continue
     for (const row of segment.rows) {
-      if (row.kind === 'add' || row.kind === 'mod') added += 1
-      if (row.kind === 'del' || row.kind === 'mod') deleted += 1
+      if (row.kind === 'context' || row.kind === 'meta') continue
+      if (row.newLine !== undefined) added += 1
+      if (row.oldLine !== undefined) deleted += 1
     }
   }
   return { added, deleted }
