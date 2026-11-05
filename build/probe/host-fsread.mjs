@@ -46,6 +46,9 @@ export async function run() {
       connection: { trustedHosts: [] },
       webServer: { register: (value) => { route = value; return () => {} } },
       effect: (fn) => fn(),
+      // No workingDirectory service on this fake DSH: the optional wait never
+      // fires, which is the 0.2.0 path (header cwd decides).
+      inject: () => ({}),
     })
     if (route === undefined) {
       report.check('apply() registers the route table', false)

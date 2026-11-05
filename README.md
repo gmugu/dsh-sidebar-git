@@ -64,8 +64,8 @@ each other:
   (verbatim upstream, type-stripped at build) + `index.js` (new glue).
 - `src/client/` — `GitPanel.tsx` (upstream GitLens, store dependency replaced
   by an always-armed workspace fence), `GitDiffPane.tsx` (upstream DiffPane,
-  git branch only), `diff/` stack (verbatim), locales subset (zh/en),
-  `index.tsx` (new: native tab registration).
+  git branch only), `diff/` stack (verbatim), locales subset
+  (zh/en/ja/es/fr/de/ru/pt), `index.tsx` (new: native tab registration).
 - `build/build.js` — esbuild: type-strips the host modules, bundles the TSX
   client into the DSH `window.__ModuleLoader__` wrapper (react/primitives
   external), compiles `*.module.css` into style-injection + className map.
@@ -135,8 +135,8 @@ refreshes in the background — no "加载中…" flash, no lost draft.
   document on non-empty diff text and renders nothing for a new file) and the
   untracked discard (upstream's `discard` runs `git checkout --` only, which
   cannot touch a path the index does not know).
-- Route prefix `/git-panel/api`; locale reduced to the zh/en keys this panel
-  uses.
+- Route prefix `/git-panel/api`; locale reduced to the keys this panel
+  uses, shipped in zh, en, ja, es, fr, de, ru and pt.
 
 ## License
 

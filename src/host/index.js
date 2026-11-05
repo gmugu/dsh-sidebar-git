@@ -26,21 +26,61 @@ export const name = 'dsh-sidebar-git'
 
 /**
  * Services required before mounting: the route table, session store, and the
- * connection service whose trust fence (and configured trustedHosts) gates
- * every request — the same authority list the /api gateway reads.
+ * connection service whose admission (Host/Origin fence + browser
+ * authentication, the exact gate the /api bridge applies) decides every
+ * request.
+ *
+ * `workingDirectory` (DSH 0.2.1+) is deliberately NOT declared here: it does
+ * not exist on 0.2.0 profiles, and a required injection would keep the whole
+ * plugin from mounting there. `apply` waits for it through `ctx.inject`
+ * instead, so the plugin mounts either way and falls back to the session
+ * header when the service is absent.
  */
 export const inject = ['webServer', 'sessions', 'connection']
 
 /**
- * Resolve a session's authoritative working directory. The attached session
- * header wins; while the session is still hydrating (the web client attaches
- * the current conversation a moment after page load) the caller's own
- * list-summary cwd is used. Unlike upstream, the session-persistence index
- * fallback is not carried over — cold detached sessions degrade to the
- * process cwd instead (documented extraction simplification).
+ * The session's EFFECTIVE working directory on DSH 0.2.1+.
+ *
+ * `session.header.cwd` only names the ORIGINAL project: the `workingDirectory`
+ * Session projection owns the directory a `/cd` or the `working_directory` tool
+ * selected (the header is immutable and "continues to identify the original
+ * project"). `ctx.workingDirectory.get(session)` answers the committed
+ * projection, falling back to the deployment default when nothing is recorded.
+ *
+ * The service reference is captured from the optional `ctx.inject` wait (see
+ * apply) and is undefined on 0.2.0. A missing header (the session is
+ * hydrating) plus the deployment default means "nothing recorded", so the
+ * caller's summary cwd must keep winning in that case.
+ *
+ * @param service - the captured workingDirectory service, if this DSH has one.
+ * @param session - the attached session, when it exists.
+ * @returns the recorded effective directory, or undefined when it adds nothing.
  */
-async function sessionCwdOf(ctx, sessionId, clientCwd) {
+function effectiveCwdOf(service, session) {
+  if (session === undefined || service === undefined || typeof service.get !== 'function') return undefined
+  try {
+    const current = service.get(session)
+    if (typeof current !== 'string' || current === '') return undefined
+    if (session.header.cwd === undefined && current === service.defaultDirectory) return undefined
+    return current
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Resolve a session's authoritative working directory: the effective
+ * (possibly switched) directory on 0.2.1+, else the attached session header,
+ * else — while the session is still hydrating (the web client attaches the
+ * current conversation a moment after page load) — the caller's own
+ * list-summary cwd. Unlike upstream, the session-persistence index fallback is
+ * not carried over — cold detached sessions degrade to the process cwd instead
+ * (documented extraction simplification).
+ */
+async function sessionCwdOf(ctx, workingDirectory, sessionId, clientCwd) {
   const session = ctx.sessions.get(sessionId)
+  const effective = effectiveCwdOf(workingDirectory, session)
+  if (effective !== undefined) return effective
   const headerCwd = session?.header.cwd
   if (headerCwd !== undefined && headerCwd !== '') return headerCwd
   if (clientCwd !== undefined && clientCwd !== '') {
@@ -143,13 +183,17 @@ async function resolveGitPath(cwd, raw, selected) {
   return requireAbsolute(join(root, raw))
 }
 
-/** The git.* dispatch table (ported from upstream buildApi's git section). */
-function buildApi(ctx) {
+/**
+ * The git.* dispatch table (ported from upstream buildApi's git section).
+ * @param ctx - host plugin context.
+ * @param workingDirectoryOf - reads the captured 0.2.1+ workingDirectory service.
+ */
+function buildApi(ctx, workingDirectoryOf) {
   const cwdOf = async (payload) => {
     const sessionId = requireString(payload, 'sessionId')
     const record = payload
     const clientCwd = typeof record?.cwd === 'string' && record.cwd !== '' ? record.cwd : undefined
-    return { sessionId, cwd: await sessionCwdOf(ctx, sessionId, clientCwd) }
+    return { sessionId, cwd: await sessionCwdOf(ctx, workingDirectoryOf(), sessionId, clientCwd) }
   }
   /** Resolve the optional Git-panel checkout selector against the
    * authoritative session repository. Unlike `cwd`, `worktree` is never
@@ -266,25 +310,45 @@ function buildApi(ctx) {
  * @param ctx - host plugin context (webServer, sessions, connection).
  */
 export function apply(ctx) {
-  // Delegate the Host/Origin fence to the connection service itself — the
-  // exact isTrusted() the /api gateway calls — so one trustedHosts config
-  // (the connection row in the profile patch) governs both surfaces. The
-  // copied trust-fence stays as the fallback for a connection service that
-  // predates isTrusted, reading the same service's configured trustedHosts.
-  const fence = (req) => {
+  // Optional 0.2.1+ dependency: wait for the effective-directory service
+  // without making it a hard requirement, so the plugin still mounts on a DSH
+  // whose profiles have no workingDirectory row. The callback runs when (and
+  // if) the service is active, and clears the reference if it goes away.
+  let workingDirectory
+  ctx.inject(['workingDirectory'], (waiting) => {
+    workingDirectory = waiting.workingDirectory
+    waiting.effect(() => () => { workingDirectory = undefined }, 'dsh-sidebar-git: workingDirectory')
+  })
+
+  // Delegate admission to the connection service, the same authority the /api
+  // bridge uses: requestRejection() applies the Host/Origin fence AND requires
+  // an authenticated browser Peer (the launch-token cookie). It answers with
+  // the HTTP status to send back, or undefined when the caller may proceed.
+  //
+  // The fallback exists for a DSH whose connection service predates
+  // requestRejection (0.2.0 offers no admission method at all): the copied
+  // fence applies that release's rules, reading the same service's configured
+  // trustedHosts (the connection row in the profile patch) so the route never
+  // invents an authority list of its own.
+  const reject = (req, res) => {
     const connection = ctx.connection
-    if (typeof connection?.isTrusted === 'function') return connection.isTrusted(req)
-    return isTrustedApiRequest(req, connection?.trustedHosts ?? [])
+    if (typeof connection?.requestRejection === 'function') {
+      const rejection = connection.requestRejection(req)
+      if (rejection === undefined) return false
+      res.statusCode = rejection
+      res.end()
+      return true
+    }
+    if (isTrustedApiRequest(req, connection?.trustedHosts ?? [])) return false
+    writeJson(res, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
+    return true
   }
-  const api = buildApi(ctx)
+  const api = buildApi(ctx, () => workingDirectory)
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: '/git-panel/api',
     handler: async (req, res) => {
-      if (!fence(req)) {
-        writeJson(res, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
-        return
-      }
+      if (reject(req, res)) return
       if (req.method !== 'POST') {
         writeJson(res, 405, { ok: false, error: { code: 'method-error', message: 'method not allowed' } })
         return

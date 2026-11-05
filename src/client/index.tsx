@@ -52,7 +52,13 @@ interface ClientContextLike {
   sessions?: {
     list: {
       subscribe(listener: () => void): () => void
-      getSnapshot(): { byId: Record<string, { cwd?: string } | undefined> }
+      getSnapshot(): {
+        byId: Record<string, {
+          cwd?: string
+          /** DSH 0.2.1+ Session summary projections (effective working directory). */
+          projectionValues?: { workingDirectory?: string | null }
+        } | undefined>
+      }
     }
   }
   sidebarRightTabs?: {
@@ -75,12 +81,22 @@ interface ClientContextLike {
 /** Module-level holder: the client context, set during apply (like upstream attachLocale). */
 let clientCtx: ClientContextLike | undefined
 
-/** The current session's workspace root, live from the client session list. */
+/**
+ * The current session's EFFECTIVE working directory, live from the client
+ * session list. `cwd` is the directory the session was created in; from DSH
+ * 0.2.1 the `workingDirectory` summary projection carries the directory a
+ * `/cd` or the model's `working_directory` tool selected. Without the
+ * projection (older DSH) the summary `cwd` is the only answer.
+ */
 function useSessionCwd(sessionId: string): string | undefined {
   const list = clientCtx?.sessions?.list
   return useSyncExternalStore(
     useMemo(() => (listener: () => void) => list?.subscribe(listener) ?? (() => {}), [list]),
-    () => list?.getSnapshot().byId[sessionId]?.cwd,
+    () => {
+      const row = list?.getSnapshot().byId[sessionId]
+      const current = row?.projectionValues?.workingDirectory
+      return typeof current === 'string' && current !== '' ? current : row?.cwd
+    },
   )
 }
 

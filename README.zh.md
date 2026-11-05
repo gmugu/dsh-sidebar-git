@@ -52,7 +52,7 @@ DSH 原生右侧边栏里的独立 Git 面板标签页 —— 从
   （逐字上游，构建时去类型）+ `index.js`（新增胶水）。
 - `src/client/` —— `GitPanel.tsx`（上游 GitLens，sidebar store 依赖换成了
   永远武装的工作区围栏）、`GitDiffPane.tsx`（上游 DiffPane，只保留 git 分支）、
-  `diff/` 栈（逐字）、文案子集（zh/en）、`index.tsx`（新增：原生标签页注册）。
+  `diff/` 栈（逐字）、文案子集（zh/en/ja/es/fr/de/ru/pt）、`index.tsx`（新增：原生标签页注册）。
 - `build/build.js` —— esbuild：给 host 模块去类型；把 TSX 客户端打成 DSH 的
   `window.__ModuleLoader__` 包装（react/primitives 走 external）；把
   `*.module.css` 编译成「注入 style + className 映射」。
@@ -111,7 +111,7 @@ store（注册项里的 `store: createGitStore()`，来自
 - **两处做到比上游更好**：未跟踪文件的预览（上游 pane 用「差异文本非空」当渲染
   门，新文件因此什么都画不出来）；未跟踪文件的回退（上游 `discard` 只会
   `git checkout --`，对索引里没有的路径无能为力）。
-- 路由前缀 `/git-panel/api`；文案精简为本面板实际用到的 zh/en 键。
+- 路由前缀 `/git-panel/api`；文案精简为本面板实际用到的键（zh/en/ja/es/fr/de/ru/pt）。
 
 ## 许可
 

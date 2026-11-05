@@ -80,10 +80,25 @@ async function readEnvelope<T>(response: Response): Promise<T> {
   return parsed.value as T
 }
 
+/**
+ * Resolve one API method against the document base — the same resolution the
+ * shipped client uses for its own transport. DSH may be mounted under a path
+ * prefix behind a prefix-stripping proxy (`--public-url`, 0.2.1+); the page's
+ * own base then carries that prefix, which a root-absolute URL would drop.
+ * @param method - the git-panel API method name.
+ * @returns the absolute URL of the method.
+ */
+function apiUrl(method: string): string {
+  const path = `git-panel/api/${method}`
+  const base = typeof document === 'undefined' ? undefined : document.baseURI
+  if (typeof base !== 'string' || base === '') return `/${path}`
+  return new URL(path, base).href
+}
+
 async function call<T>(method: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`/git-panel/api/${method}`, {
+    response = await fetch(apiUrl(method), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),

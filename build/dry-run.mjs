@@ -228,19 +228,39 @@ if (clientOnly.length > 0 || hostOnly.length > 0) {
 }
 console.log(`route/api parity ✓ — ${new Set(clientMethods).size} method(s)`)
 
-const localeSource = await source('../src/client/locales.ts')
-const zhStart = localeSource.indexOf('export const zh')
-const enStart = localeSource.indexOf('export const en')
-if (zhStart < 0 || enStart < 0 || enStart < zhStart) throw new Error('locales.ts: cannot find the zh and en dictionaries')
-const keysIn = (text) => [...text.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9]*):/gm)].map((match) => match[1])
-const zhKeys = keysIn(localeSource.slice(zhStart, enStart))
-const enKeys = keysIn(localeSource.slice(enStart))
-const zhOnly = zhKeys.filter((key) => !enKeys.includes(key))
-const enOnly = enKeys.filter((key) => !zhKeys.includes(key))
-if (zhOnly.length > 0 || enOnly.length > 0) {
-  throw new Error(`locale key mismatch — zh only: ${zhOnly.join(', ') || 'none'}; en only: ${enOnly.join(', ') || 'none'}`)
+// Upgrade-compatibility surface: decisions that only matter on the newer DSH
+// are easy to undo by accident, so the gate names them explicitly.
+for (const [label, text, needle] of [
+  ['host reads the effective working directory', hostSource, 'workingDirectory'],
+  ['host delegates admission to the connection service', hostSource, 'requestRejection'],
+  ['client resolves its API against the document base', apiSource, 'document.baseURI'],
+]) {
+  if (!text.includes(needle)) throw new Error(`${label} — expected to find "${needle}" in the source`)
 }
-console.log(`locale parity ✓ — ${zhKeys.length} key(s)`)
+console.log('upgrade-compatibility surface ✓ — workingDirectory, requestRejection, document.baseURI')
+
+const localeSource = await source('../src/client/locales.ts')
+const LOCALES = ['zh', 'en', 'ja', 'es', 'fr', 'de', 'ru', 'pt']
+const keysIn = (text) => [...text.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9]*):/gm)].map((match) => match[1])
+const dictionaries = new Map()
+for (const chunk of localeSource.split(/\nexport const /).slice(1)) {
+  const name = chunk.match(/^([A-Za-z][A-Za-z0-9]*)/)?.[1]
+  if (name === undefined || !LOCALES.includes(name)) continue
+  dictionaries.set(name, keysIn(chunk))
+}
+if (dictionaries.size !== LOCALES.length) {
+  throw new Error(`locales.ts: expected ${LOCALES.length} dictionaries, found ${[...dictionaries.keys()].join(', ') || 'none'}`)
+}
+const zhKeys = dictionaries.get('zh')
+for (const id of LOCALES) {
+  const keys = dictionaries.get(id)
+  const missing = zhKeys.filter((key) => !keys.includes(key))
+  const extra = keys.filter((key) => !zhKeys.includes(key))
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(`locale "${id}" key mismatch — missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'}`)
+  }
+}
+console.log(`locale parity ✓ — ${zhKeys.length} key(s) × ${LOCALES.length} language(s)`)
 
 // ── Portability pass: nothing this repository ships may carry the builder's
 //    machine. An artifact, a doc or a script that embeds an absolute path (a

@@ -24,7 +24,7 @@
 - **客户端 ctx 是白名单代理，动词表里没有 `inject`**：`ctx.inject([...], cb)` 会被守卫直接拒绝并杀死整个激活。正确写法是「在模块 `inject` 导出里声明服务 → `ctx.effect` 内**直接访问** `ctx.sidebarRightTabs`」。
 - **导入模块未导出的符号 = `undefined`**，渲染它会让 React 抛 “element type is invalid”（#130，只在浏览器 console 可见）。构建审计就是为此存在；加新图标/组件前先确认它在 primitives 的导出清单里。
 - **dock 只渲染活动 tab 的 body**（`renderTab(pane.activeTabId)`）：切走即卸载。跨 tab 存活的状态必须放进注册声明的 store（`store: createGitStore()`，`defineStore`，框架按 session 铸实例，组件经 `useStore`/`actions` 读写），且“已应用的 scope”也要存在 store 里，否则重挂载会清掉选择并产生空-填闪烁。
-- **UI 文案走 locale**（`src/client/locales.ts`，zh/en 两份 key 必须对齐）；颜色继承主题 token。
+- **UI 文案走 locale**（`src/client/locales.ts`，zh/en/ja/es/fr/de/ru/pt 八份 key 必须对齐）；颜色继承主题 token。
 - **写文件用 read/edit/write 工具，不要用 shell 重定向**（`Set-Content` 会带 UTF-8 BOM，`package.json` 带 BOM 会让 `JSON.parse` 直接失败）。
 - （历史注记，迁入 profile 后不再适用）跨盘 workspace 无法被 pnpm 直接 junction 进 profile，曾用 staging 副本同步；现在仓库与 profile 同盘同目录。勿在旧副本 `D:\ws\dsh-sidebar-git` 中执行任何构建/同步。
 
