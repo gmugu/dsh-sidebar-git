@@ -826,8 +826,8 @@ export function GitPanel(props: GitPanelProps) {
             portal
             compact
             align="start"
-            getAnchorRect={() => (historyMenu === null ? null : new DOMRect(historyMenu.x, historyMenu.y, 0, 0))}
-            anchor={<span />}
+            anchor={null}
+            anchorPoint={historyMenu === null ? undefined : { x: historyMenu.x, y: historyMenu.y }}
           />
 
           {/* Destructive actions land here first: Cancel / Confirm. */}
